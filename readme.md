@@ -5,7 +5,7 @@ Requirements
 
 - Webcam
 
-**Setup: **
+**Setup:**
 
 git clone <repo>
 cd SignSprint
