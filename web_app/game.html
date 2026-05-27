@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SignSprint Game</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game">
+    <h1>SignSprint</h1>
+
+    <div class="stats">
+      <p>Target Letter: <span id="targetLetter">A</span></p>
+      <p>Prediction: <span id="prediction">-</span></p>
+      <p>Score: <span id="score">0</span></p>
+      <p>Streak: <span id="streak">0</span></p>
+      <p>Time: <span id="timer">60</span>s</p>
+    </div>
+
+    <video id="webcam" autoplay playsinline></video>
+    <p id="mirrorStatus">Mirror Mode: ON</p>
+
+    <div class="controls">
+      <button onclick="startGame()">Start</button>
+      <button onclick="mockCorrect()">Mock Correct</button>
+      <button onclick="nextLetter()">Next Letter</button>
+    </div>
+
+    <p id="message"></p>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

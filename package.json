@@ -1,0 +1,19 @@
+{
+  "name": "signsprint",
+  "version": "1.0.0",
+  "description": "SignSprint – ASL Real-Time Recognition\r Requirements",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}
