@@ -15,6 +15,9 @@ label_path = os.path.join(model_dir, "label_classes.npy")
 model = tf.keras.models.load_model(model_path)
 label_classes = np.load(label_path, allow_pickle=True)
 
+print("Loaded model input shape:", model.input_shape)
+print("Model path:", model_path)
+
 # ===== MediaPipe Setup =====
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
@@ -44,7 +47,7 @@ while True:
     predicted_letter = ""
 
     if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
+        for hand_index, hand_landmarks in enumerate(results.multi_hand_landmarks):
 
             mp_drawing.draw_landmarks(
                 frame,
@@ -67,7 +70,18 @@ while True:
             coords = coords / max_val
             landmark_list = coords.flatten().tolist()
 
-            input_data = np.array(landmark_list).reshape(1, -1)
+            # ===== Add hand value: left = 0, right = 1 =====
+            handedness = results.multi_handedness[hand_index].classification[0].label
+
+            if handedness == "Left":
+                hand_value = 0
+            else:
+                hand_value = 1
+
+            input_list = [hand_value] + landmark_list
+
+            input_data = np.array(input_list, dtype=np.float32).reshape(1, -1)
+
             prediction = model.predict(input_data, verbose=0)
 
             class_index = np.argmax(prediction)
