@@ -5,6 +5,7 @@ from tensorflow.keras import layers, models
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import os
+from sklearn.metrics import classification_report, confusion_matrix
 
 # ===== Path Setup =====
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,12 +16,38 @@ os.makedirs(model_dir, exist_ok=True)
 # ===== Load Dataset =====
 df = pd.read_csv(dataset_path)
 
-X = df.drop("label", axis=1).values
+df.columns = df.columns.str.strip()
+
+df["label"] = df["label"].astype(str).str.strip()
+
+df["hand"] = df["hand"].astype(str).str.strip().str.lower()
+df["hand"] = df["hand"].map({
+    "left": 0,
+    "right": 1
+})
+
+df = df.dropna(subset=["hand"])
+
+X = df.drop("label", axis=1)
 y = df["label"].values
+
+X = X.apply(pd.to_numeric, errors="coerce")
+
+bad_rows = X.isna().any(axis=1)
+print("Bad rows removed:", bad_rows.sum())
+
+X = X[~bad_rows]
+y = y[~bad_rows]
+
+X = X.to_numpy(dtype=np.float32)
 
 # ===== Encode Labels =====
 encoder = LabelEncoder()
 y_encoded = encoder.fit_transform(y)
+y_encoded = np.array(y_encoded, dtype=np.int32)
+
+print("Training X shape:", X.shape)
+print("Example X type:", X.dtype)
 
 # ===== Train/Test Split =====
 X_train, X_test, y_train, y_test = train_test_split(
@@ -29,17 +56,17 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # ===== Build Model =====
 model = models.Sequential([
-    layers.Input(shape=(63,)),
+    layers.Input(shape=(X.shape[1],)),
     layers.Dense(128, activation='relu'),
     layers.Dropout(0.3),
-    layers.Dense(64, activation='relu'),
-    layers.Dense(len(encoder.classes_), activation='softmax')
+    layers.Dense(64, activation="relu"),
+    layers.Dense(len(encoder.classes_), activation="softmax")
 ])
 
 model.compile(
-    optimizer='adam',
-    loss='sparse_categorical_crossentropy',
-    metrics=['accuracy']
+    optimizer="adam",
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"]
 )
 
 # ===== Train =====
@@ -50,6 +77,10 @@ model.fit(
     batch_size=32,
     validation_split=0.2
 )
+
+y_pred = np.argmax(model.predict(X_test), axis=1)
+print(classification_report(y_test, y_pred, target_names=encoder.classes_))
+print(confusion_matrix(y_test, y_pred))
 
 # ===== Evaluate =====
 test_loss, test_acc = model.evaluate(X_test, y_test)
@@ -63,3 +94,4 @@ model.save(model_path)
 np.save(label_path, encoder.classes_)
 
 print("Model saved to:", model_path)
+print("Labels saved to:", label_path)
