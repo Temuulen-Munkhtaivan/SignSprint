@@ -13,7 +13,7 @@ model_path = os.path.join(model_dir, "asl_landmark_model.keras")
 label_path = os.path.join(model_dir, "label_classes.npy")
 
 model = tf.keras.models.load_model(model_path)
-label_classes = np.load(label_path, allow_pickle=True)
+label_classes = np.load(label_path, allow_pickle=False)
 
 print("Loaded model input shape:", model.input_shape)
 print("Model path:", model_path)
