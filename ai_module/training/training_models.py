@@ -16,8 +16,30 @@ os.makedirs(model_dir, exist_ok=True)
 # ===== Load Dataset =====
 df = pd.read_csv(dataset_path)
 
-X = df.drop("label", axis=1).values
+df.columns = df.columns.str.strip()
+
+df["label"] = df["label"].astype(str).str.strip()
+
+df["hand"] = df["hand"].astype(str).str.strip().str.lower()
+df["hand"] = df["hand"].map({
+    "left": 0,
+    "right": 1
+})
+
+df = df.dropna(subset=["hand"])
+
+X = df.drop("label", axis=1)
 y = df["label"].values
+
+X = X.apply(pd.to_numeric, errors="coerce")
+
+bad_rows = X.isna().any(axis=1)
+print("Bad rows removed:", bad_rows.sum())
+
+X = X[~bad_rows]
+y = y[~bad_rows]
+
+X = X.to_numpy(dtype=np.float32)
 
 # ===== Encode Labels =====
 encoder = LabelEncoder()
@@ -34,7 +56,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # ===== Build Model =====
 model = models.Sequential([
-    layers.Input(shape=(63,)),
+    layers.Input(shape=(X.shape[1],)),
     layers.Dense(128, activation='relu'),
     layers.Dropout(0.3),
     layers.Dense(64, activation="relu"),
