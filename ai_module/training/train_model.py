@@ -91,7 +91,7 @@ model_path = os.path.join(model_dir, "asl_landmark_model.keras")
 label_path = os.path.join(model_dir, "label_classes.npy")
 
 model.save(model_path)
-np.save(label_path, encoder.classes_)
+np.save(label_path, encoder.classes_.astype(str))
 
 print("Model saved to:", model_path)
 print("Labels saved to:", label_path)
