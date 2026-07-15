@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SignSprint</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <h1>🤟 SignSprint</h1>
+    <div class="stats" id="stats" hidden>
+      <div class="stat"><span class="stat-label">Score</span><span id="scoreVal">0</span></div>
+      <div class="stat"><span class="stat-label">Streak</span><span id="streakVal">0</span></div>
+      <div class="stat"><span class="stat-label">Round</span><span id="roundVal">0/0</span></div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ===== Start screen ===== -->
+    <section id="startScreen" class="screen">
+      <p class="tagline">Show the letter with your hand. Beat the clock. Learn ASL fingerspelling while you play.</p>
+      <button id="startBtn" class="btn btn-primary">Start Game</button>
+      <p class="hint">Needs camera access. Works best in good lighting with your hand fully in frame.</p>
+    </section>
+
+    <!-- ===== Game screen ===== -->
+    <section id="gameScreen" class="screen" hidden>
+
+      <div class="game-grid">
+
+        <div class="camera-pane">
+          <div class="camera-wrap">
+            <video id="video" playsinline autoplay muted hidden></video>
+            <canvas id="overlay"></canvas>
+            <div id="noHandBanner" class="no-hand-banner" hidden>Show your hand to the camera</div>
+          </div>
+          <div class="round-timer-track"><div id="roundTimerBar" class="round-timer-bar"></div></div>
+        </div>
+
+        <div class="prompt-pane">
+          <div class="target-label">Sign this letter</div>
+          <div id="targetLetter" class="target-letter">A</div>
+          <div id="predictedRow" class="predicted-row">
+            <span class="predicted-label">You're showing:</span>
+            <span id="predictedLetter" class="predicted-letter">—</span>
+          </div>
+          <div class="hold-track"><div id="holdBar" class="hold-bar"></div></div>
+
+          <div id="feedbackPanel" class="feedback-panel" hidden>
+            <div id="feedbackTitle" class="feedback-title"></div>
+            <div id="referencePanel" class="reference-panel" hidden>
+              <img id="referenceImg" alt="Reference handshape" />
+              <p id="referenceCue" class="reference-cue"></p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="mastery-row" id="masteryRow"></div>
+
+    </section>
+
+    <!-- ===== Game over screen ===== -->
+    <section id="endScreen" class="screen" hidden>
+      <h2>Session Complete!</h2>
+      <div class="end-stats">
+        <div class="end-stat"><span id="finalScore">0</span><label>Points</label></div>
+        <div class="end-stat"><span id="finalAccuracy">0%</span><label>Accuracy</label></div>
+        <div class="end-stat"><span id="finalBestStreak">0</span><label>Best Streak</label></div>
+      </div>
+      <button id="playAgainBtn" class="btn btn-primary">Play Again</button>
+    </section>
+
+    <div id="connectionBanner" class="connection-banner" hidden></div>
+
+  </main>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
