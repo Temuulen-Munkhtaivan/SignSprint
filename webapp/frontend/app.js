@@ -1,252 +1,221 @@
-import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
-
-// ===== Config =====
-const LETTERS = ["A","B","C","D","E","F","G","H","I","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y"];
-const ROUNDS_TOTAL = 15;
-const ROUND_TIME_MS = 12000;
-const HOLD_MS = 700;
-const CONFIDENCE_THRESHOLD = 0.75;
-const SEND_INTERVAL_MS = 100; // ~10fps to the backend
-const HISTORY_LEN = 8;
-
-// Short ASL fingerspelling cues used as a fallback when no reference image is
-// supplied at assets/letters/<LETTER>.png (see that folder's README).
-const LETTER_CUES = {
-  A: "Fist with thumb resting alongside the fingers.",
-  B: "Flat hand, fingers together pointing up, thumb folded across the palm.",
-  C: "Curve the hand into a C shape.",
-  D: "Index finger up, other fingers touch the thumb in a circle.",
-  E: "Fingers curled down, thumb tucked in front.",
-  F: "Thumb and index finger touch in a circle, other three fingers up.",
-  G: "Index finger and thumb point sideways, like a small gun shape.",
-  H: "Index and middle finger extended together, pointing sideways.",
-  I: "Pinky finger up, other fingers in a fist.",
-  K: "Index and middle finger up in a V, thumb between them.",
-  L: "Thumb and index finger form an L, other fingers folded.",
-  M: "Thumb tucked under three fingers (index, middle, ring).",
-  N: "Thumb tucked under two fingers (index, middle).",
-  O: "Fingers and thumb curved to form an O shape.",
-  P: "Like K, but pointing downward.",
-  Q: "Like G, but pointing downward.",
-  R: "Index and middle finger crossed.",
-  S: "Fist with thumb across the front of the fingers.",
-  T: "Fist with thumb tucked between index and middle finger.",
-  U: "Index and middle finger up together, straight.",
-  V: "Index and middle finger up in a V shape.",
-  W: "Index, middle, and ring finger up, spread apart.",
-  X: "Index finger curled into a hook shape.",
-  Y: "Thumb and pinky extended, other fingers folded down.",
-};
+import { LETTERS, LETTER_CUES, ROUNDS_TOTAL, SEND_INTERVAL_MS, HISTORY_LEN, DIFFICULTIES, XP_CORRECT, XP_MISS, unlockedThemes, CORRECT_ADVANCE_DELAY_MS, MISS_ADVANCE_DELAY_MS } from "./js/config.js";
+import {
+  loadProfile, saveProfile, getLevelInfo, addXp,
+  recordRoundResult, recordCombo, recordGameEnd,
+} from "./js/profile.js";
+import { checkAchievements, showAchievementToasts } from "./js/achievements.js";
+import { createComboState, registerCorrect, registerMiss, maybeShowComboPopup } from "./js/combo.js";
+import { ensureAudio, setVolume, setMuted, playCorrectSound, playMissSound, playTick } from "./js/audio.js";
+import { burstConfetti, glowPulse } from "./js/confetti.js";
+import {
+  setupHandLandmarker, setupCamera, getFlippedFrame, detectHands, drawSkeleton, normalizeLandmarks,
+} from "./js/handTracking.js";
+import { connectWs, requestPrediction, createSmoother } from "./js/websocketClient.js";
+import { loadReferences, coachFor } from "./js/coaching.js";
+import { createCircularTimer } from "./js/timer.js";
+import { renderEndReport, renderStatsScreen } from "./js/statsView.js";
 
 // ===== DOM =====
-const startScreen = document.getElementById("startScreen");
-const gameScreen = document.getElementById("gameScreen");
-const endScreen = document.getElementById("endScreen");
+const screens = {
+  start: document.getElementById("startScreen"),
+  game: document.getElementById("gameScreen"),
+  end: document.getElementById("endScreen"),
+  stats: document.getElementById("statsScreen"),
+  settings: document.getElementById("settingsScreen"),
+};
+let previousScreen = "start";
+
+function showScreen(name) {
+  for (const [key, el] of Object.entries(screens)) el.hidden = key !== name;
+  document.getElementById("stats").hidden = name !== "game";
+}
+
 const startBtn = document.getElementById("startBtn");
 const playAgainBtn = document.getElementById("playAgainBtn");
-const statsEl = document.getElementById("stats");
+const viewStatsFromEndBtn = document.getElementById("viewStatsFromEndBtn");
+const backFromStatsBtn = document.getElementById("backFromStatsBtn");
+const backFromSettingsBtn = document.getElementById("backFromSettingsBtn");
+const statsBtn = document.getElementById("statsBtn");
+const settingsBtn = document.getElementById("settingsBtn");
+const muteBtn = document.getElementById("muteBtn");
+const modeToggleBtn = document.getElementById("modeToggleBtn");
+
 const scoreVal = document.getElementById("scoreVal");
-const streakVal = document.getElementById("streakVal");
+const comboVal = document.getElementById("comboVal");
 const roundVal = document.getElementById("roundVal");
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
 const overlayCtx = overlay.getContext("2d");
 const noHandBanner = document.getElementById("noHandBanner");
-const roundTimerBar = document.getElementById("roundTimerBar");
 const targetLetterEl = document.getElementById("targetLetter");
 const predictedLetterEl = document.getElementById("predictedLetter");
+const confidenceValEl = document.getElementById("confidenceVal");
 const holdBar = document.getElementById("holdBar");
 const feedbackPanel = document.getElementById("feedbackPanel");
 const feedbackTitle = document.getElementById("feedbackTitle");
+const responseTimeValEl = document.getElementById("responseTimeVal");
+const poseSimilarityValEl = document.getElementById("poseSimilarityVal");
+const coachingHintEl = document.getElementById("coachingHint");
 const referencePanel = document.getElementById("referencePanel");
 const referenceImg = document.getElementById("referenceImg");
 const referenceCue = document.getElementById("referenceCue");
 const masteryRow = document.getElementById("masteryRow");
-const finalScore = document.getElementById("finalScore");
-const finalAccuracy = document.getElementById("finalAccuracy");
-const finalBestStreak = document.getElementById("finalBestStreak");
 const connectionBanner = document.getElementById("connectionBanner");
+const levelNumEl = document.getElementById("levelNum");
+const xpFillEl = document.getElementById("xpFill");
 
-// ===== Audio (created lazily on first user gesture) =====
-let audioCtx = null;
-function ensureAudio() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-}
-function beep(freqs, duration = 0.12, gap = 0.09) {
-  if (!audioCtx) return;
-  freqs.forEach((freq, i) => {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    const start = audioCtx.currentTime + i * gap;
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.2, start + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    osc.connect(gain).connect(audioCtx.destination);
-    osc.start(start);
-    osc.stop(start + duration + 0.02);
-  });
-}
-const playCorrectSound = () => beep([523.25, 659.25, 783.99]);
-const playMissSound = () => beep([220, 160]);
+const timerCircleEl = document.getElementById("timerCircle");
+const timerTextEl = document.getElementById("timerText");
+const circularTimer = createCircularTimer(timerCircleEl, timerTextEl);
 
-// ===== Confetti (tiny self-contained canvas effect) =====
-function burstConfetti() {
-  let canvas = document.getElementById("confettiCanvas");
-  if (!canvas) {
-    canvas = document.createElement("canvas");
-    canvas.id = "confettiCanvas";
-    document.body.appendChild(canvas);
-  }
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  const ctx = canvas.getContext("2d");
-  const colors = ["#ff5da2", "#34e4c7", "#ffd166", "#8b6bff"];
-  const particles = Array.from({ length: 80 }, () => ({
-    x: canvas.width / 2 + (Math.random() - 0.5) * 200,
-    y: canvas.height * 0.35,
-    vx: (Math.random() - 0.5) * 10,
-    vy: Math.random() * -8 - 2,
-    size: Math.random() * 7 + 3,
-    color: colors[Math.floor(Math.random() * colors.length)],
-    rotation: Math.random() * Math.PI,
-    vr: (Math.random() - 0.5) * 0.3,
-  }));
+// ===== Profile / settings =====
+let profile = loadProfile();
 
-  let frame = 0;
-  const maxFrames = 70;
-  function step() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const p of particles) {
-      p.vy += 0.35;
-      p.x += p.vx;
-      p.y += p.vy;
-      p.rotation += p.vr;
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rotation);
-      ctx.fillStyle = p.color;
-      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
-      ctx.restore();
-    }
-    frame++;
-    if (frame < maxFrames) requestAnimationFrame(step);
-    else ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-  requestAnimationFrame(step);
+function applyMode(mode) {
+  document.body.dataset.mode = mode;
+  modeToggleBtn.textContent = mode === "light" ? "☀️" : "🌙";
+  const modeSelect = document.getElementById("modeSelect");
+  if (modeSelect) modeSelect.value = mode;
 }
 
-// ===== Normalization: must mirror ai_module/data_collection/data_collector.py =====
-function normalizeLandmarks(landmarks) {
-  const wrist = landmarks[0];
-  const rel = landmarks.map((lm) => [lm.x - wrist.x, lm.y - wrist.y, lm.z - wrist.z]);
-  let maxVal = 1e-6;
-  for (const [x, y, z] of rel) {
-    maxVal = Math.max(maxVal, Math.abs(x), Math.abs(y), Math.abs(z));
-  }
-  const flat = [];
-  for (const [x, y, z] of rel) flat.push(x / maxVal, y / maxVal, z / maxVal);
-  return flat;
+function applySettingsToUI() {
+  document.body.classList.toggle("colorblind", profile.settings.colorblind);
+  document.body.dataset.theme = profile.settings.theme;
+  applyMode(profile.settings.mode);
+  setVolume(profile.settings.volume);
+  setMuted(profile.settings.muted);
+
+  document.getElementById("difficultySelect").value = profile.settings.difficulty;
+  document.getElementById("sensitivitySlider").value = profile.settings.sensitivity;
+  document.getElementById("volumeSlider").value = profile.settings.volume;
+  document.getElementById("muteCheckbox").checked = profile.settings.muted;
+  document.getElementById("colorblindCheckbox").checked = profile.settings.colorblind;
+  muteBtn.textContent = profile.settings.muted ? "🔇" : "🔊";
+
+  const level = getLevelInfo(profile).level;
+  const themeSelect = document.getElementById("themeSelect");
+  const unlocked = unlockedThemes(level);
+  themeSelect.innerHTML = unlocked.map((t) => `<option value="${t.id}">${t.label}</option>`).join("");
+  themeSelect.value = profile.settings.theme;
+  document.getElementById("themeUnlockHint").textContent = `(${unlocked.length} unlocked)`;
 }
 
-const HAND_CONNECTIONS = [
-  [0,1],[1,2],[2,3],[3,4],
-  [0,5],[5,6],[6,7],[7,8],
-  [5,9],[9,10],[10,11],[11,12],
-  [9,13],[13,14],[14,15],[15,16],
-  [13,17],[17,18],[18,19],[19,20],
-  [0,17],
-];
-
-function drawSkeleton(landmarks, width, height) {
-  overlayCtx.strokeStyle = "#34e4c7";
-  overlayCtx.lineWidth = 3;
-  for (const [a, b] of HAND_CONNECTIONS) {
-    overlayCtx.beginPath();
-    overlayCtx.moveTo(landmarks[a].x * width, landmarks[a].y * height);
-    overlayCtx.lineTo(landmarks[b].x * width, landmarks[b].y * height);
-    overlayCtx.stroke();
-  }
-  overlayCtx.fillStyle = "#ff5da2";
-  for (const lm of landmarks) {
-    overlayCtx.beginPath();
-    overlayCtx.arc(lm.x * width, lm.y * height, 4, 0, Math.PI * 2);
-    overlayCtx.fill();
-  }
+function renderLevelBadge() {
+  const level = getLevelInfo(profile);
+  levelNumEl.textContent = `Lv ${level.level}`;
+  xpFillEl.style.width = `${Math.round((level.xpIntoLevel / level.xpForNext) * 100)}%`;
 }
 
-// ===== WebSocket client =====
-let ws = null;
-let wsReady = false;
-let lastSentAt = 0;
-let pendingResolve = null;
-
-function connectWs() {
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${protocol}://${location.host}/ws/predict`);
-  ws.onopen = () => {
-    wsReady = true;
-    connectionBanner.hidden = true;
-  };
-  ws.onclose = () => {
-    wsReady = false;
-    connectionBanner.textContent = "Connection lost — reconnecting…";
-    connectionBanner.hidden = false;
-    setTimeout(connectWs, 1500);
-  };
-  ws.onerror = () => ws.close();
-  ws.onmessage = (event) => {
-    if (!pendingResolve) return;
-    const data = JSON.parse(event.data);
-    pendingResolve(data);
-    pendingResolve = null;
-  };
+function currentDifficulty() {
+  return DIFFICULTIES[profile.settings.difficulty] || DIFFICULTIES.normal;
 }
 
-function requestPrediction(landmarks) {
-  if (!wsReady) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    pendingResolve = resolve;
-    ws.send(JSON.stringify({ landmarks }));
-  });
-}
+// ===== Settings screen wiring =====
+document.getElementById("difficultySelect").addEventListener("change", (e) => {
+  profile.settings.difficulty = e.target.value;
+  saveProfile(profile);
+});
+document.getElementById("sensitivitySlider").addEventListener("input", (e) => {
+  profile.settings.sensitivity = parseFloat(e.target.value);
+  smoother.setThreshold(profile.settings.sensitivity);
+  saveProfile(profile);
+});
+document.getElementById("volumeSlider").addEventListener("input", (e) => {
+  profile.settings.volume = parseFloat(e.target.value);
+  setVolume(profile.settings.volume);
+  saveProfile(profile);
+});
+document.getElementById("muteCheckbox").addEventListener("change", (e) => {
+  profile.settings.muted = e.target.checked;
+  setMuted(profile.settings.muted);
+  muteBtn.textContent = profile.settings.muted ? "🔇" : "🔊";
+  saveProfile(profile);
+});
+document.getElementById("colorblindCheckbox").addEventListener("change", (e) => {
+  profile.settings.colorblind = e.target.checked;
+  document.body.classList.toggle("colorblind", profile.settings.colorblind);
+  saveProfile(profile);
+});
+document.getElementById("themeSelect").addEventListener("change", (e) => {
+  profile.settings.theme = e.target.value;
+  document.body.dataset.theme = profile.settings.theme;
+  saveProfile(profile);
+});
+document.getElementById("modeSelect").addEventListener("change", (e) => {
+  profile.settings.mode = e.target.value;
+  applyMode(profile.settings.mode);
+  saveProfile(profile);
+});
+modeToggleBtn.addEventListener("click", () => {
+  profile.settings.mode = profile.settings.mode === "light" ? "dark" : "light";
+  applyMode(profile.settings.mode);
+  saveProfile(profile);
+});
+muteBtn.addEventListener("click", () => {
+  profile.settings.muted = !profile.settings.muted;
+  setMuted(profile.settings.muted);
+  document.getElementById("muteCheckbox").checked = profile.settings.muted;
+  muteBtn.textContent = profile.settings.muted ? "🔇" : "🔊";
+  saveProfile(profile);
+});
 
-// ===== Prediction smoothing (mirrors realtime_predict.py's prediction_history) =====
-const predictionHistory = [];
-function pushPrediction(letter, confidence) {
-  if (confidence > CONFIDENCE_THRESHOLD) {
-    predictionHistory.push(letter);
-    if (predictionHistory.length > HISTORY_LEN) predictionHistory.shift();
-  }
-}
-function smoothedPrediction() {
-  if (predictionHistory.length === 0) return null;
-  const counts = {};
-  let best = predictionHistory[0];
-  for (const l of predictionHistory) {
-    counts[l] = (counts[l] || 0) + 1;
-    if (counts[l] > counts[best]) best = l;
-  }
-  return best;
-}
+statsBtn.addEventListener("click", () => {
+  previousScreen = running ? "game" : "start";
+  renderStatsScreen(profile);
+  showScreen("stats");
+});
+settingsBtn.addEventListener("click", () => {
+  previousScreen = running ? "game" : "start";
+  applySettingsToUI();
+  showScreen("settings");
+});
+backFromStatsBtn.addEventListener("click", () => showScreen(previousScreen));
+backFromSettingsBtn.addEventListener("click", () => showScreen(previousScreen));
+viewStatsFromEndBtn.addEventListener("click", () => {
+  previousScreen = "end";
+  renderStatsScreen(profile);
+  showScreen("stats");
+});
+
+// ===== WebSocket + smoother =====
+const smoother = createSmoother(profile.settings.sensitivity, HISTORY_LEN);
+connectWs((connected) => {
+  connectionBanner.hidden = connected;
+  if (!connected) connectionBanner.textContent = "Connection lost — reconnecting…";
+});
+
+let letterReferences = null;
+loadReferences().then((refs) => (letterReferences = refs));
 
 // ===== Game state =====
 let handLandmarker = null;
 let stream = null;
 let running = false;
 let sendInFlight = false;
+let lastSentAt = 0;
+let lastConfidence = null;
+let lastUserVector = null;
+let lastHandLabel = null; // "left" | "right", matches ai_module's hand encoding
 
 let score = 0;
-let streak = 0;
-let bestStreak = 0;
+const comboState = createComboState();
+let bestComboSession = 0;
 let roundIndex = 0;
 let currentTarget = null;
 let holdMs = 0;
 let roundStartTime = 0;
 let roundActive = false;
 let correctCount = 0;
+let missCount = 0;
+let roundHadWrongPrediction = false;
+let lastTickSecond = null;
 const mastered = new Set();
+const achievementsEarnedThisSession = [];
+let sumResponseMs = 0;
+let countResponses = 0;
+let fastestResponseMs = null;
+let fastestLetter = null;
+let xpAtGameStart = 0;
 
 function pickNextLetter() {
   let letter;
@@ -270,7 +239,7 @@ function renderMasteryRow() {
 
 function updateStatsUI() {
   scoreVal.textContent = String(score);
-  streakVal.textContent = String(streak);
+  comboVal.textContent = String(comboState.combo);
   roundVal.textContent = `${Math.min(roundIndex, ROUNDS_TOTAL)}/${ROUNDS_TOTAL}`;
 }
 
@@ -282,6 +251,28 @@ function showReferenceFor(letter) {
   referenceImg.onerror = () => { referenceImg.hidden = true; };
 }
 
+function runAchievementCheck(extra = {}) {
+  const ctx = {
+    lifetimeCorrect: profile.stats.lifetimeCorrect,
+    sessionStreak: comboState.combo,
+    combo: comboState.combo,
+    sessionEnded: false,
+    sessionMisses: missCount,
+    sessionRounds: roundIndex,
+    lifetimeMasteredCount: profile.stats.masteredAllTime.length,
+    lastResponseMs: null,
+    roundHadWrongPrediction,
+    lastRoundWasCorrect: null,
+    ...extra,
+  };
+  const earned = checkAchievements(profile, ctx);
+  if (earned.length) {
+    achievementsEarnedThisSession.push(...earned);
+    showAchievementToasts(earned);
+    earned.forEach(() => addXp(profile, 25));
+  }
+}
+
 function startRound() {
   currentTarget = pickNextLetter();
   targetLetterEl.textContent = currentTarget;
@@ -289,11 +280,16 @@ function startRound() {
   holdBar.style.width = "0%";
   roundStartTime = performance.now();
   roundActive = true;
+  roundHadWrongPrediction = false;
+  lastTickSecond = null;
   feedbackPanel.hidden = true;
   feedbackPanel.classList.remove("correct", "miss");
   referencePanel.hidden = true;
-  predictionHistory.length = 0;
+  coachingHintEl.textContent = "";
+  smoother.reset();
   predictedLetterEl.textContent = "—";
+  confidenceValEl.textContent = "";
+  circularTimer.reset();
   renderMasteryRow();
 }
 
@@ -301,112 +297,118 @@ function endRound(wasCorrect) {
   roundActive = false;
   roundIndex++;
 
+  const responseMs = wasCorrect ? performance.now() - roundStartTime : null;
+  const tier = wasCorrect ? registerCorrect(comboState) : (registerMiss(comboState), null);
+  const multiplier = tier ? tier.multiplier : 1;
+  bestComboSession = Math.max(bestComboSession, comboState.combo);
+
   feedbackPanel.hidden = false;
+  responseTimeValEl.textContent = wasCorrect ? `⏱ ${(responseMs / 1000).toFixed(2)}s` : "";
+  poseSimilarityValEl.textContent = lastConfidence != null ? `Confidence: ${Math.round(lastConfidence * 100)}%` : "";
+
   if (wasCorrect) {
     correctCount++;
-    streak++;
-    bestStreak = Math.max(bestStreak, streak);
-    const bonus = Math.min(streak * 2, 20);
-    score += 10 + bonus;
+    const pointsAwarded = Math.round(10 * multiplier);
+    score += pointsAwarded;
     mastered.add(currentTarget);
+    sumResponseMs += responseMs;
+    countResponses++;
+    if (fastestResponseMs == null || responseMs < fastestResponseMs) {
+      fastestResponseMs = responseMs;
+      fastestLetter = currentTarget;
+    }
+
     feedbackPanel.classList.add("correct");
     feedbackPanel.classList.remove("miss");
-    feedbackTitle.textContent = `Correct! +${10 + bonus} pts`;
+    feedbackTitle.textContent = `Correct! +${pointsAwarded} pts`;
+    addXp(profile, XP_CORRECT * multiplier);
+    maybeShowComboPopup(comboState, tier, comboState.combo);
     playCorrectSound();
     burstConfetti();
+    glowPulse(document.querySelector(".camera-wrap"));
   } else {
-    streak = 0;
+    missCount++;
     feedbackPanel.classList.add("miss");
     feedbackPanel.classList.remove("correct");
     feedbackTitle.textContent = "Not quite — here's the correct handshape:";
     showReferenceFor(currentTarget);
+    addXp(profile, XP_MISS);
     playMissSound();
     document.querySelector(".camera-wrap").classList.add("shake");
     setTimeout(() => document.querySelector(".camera-wrap").classList.remove("shake"), 400);
+
+    const reference = letterReferences && lastHandLabel
+      ? letterReferences[currentTarget]?.[lastHandLabel]
+      : null;
+    if (reference && lastUserVector) {
+      const { hints, similarity } = coachFor(lastUserVector, reference);
+      coachingHintEl.textContent = hints.length ? hints[0] : "Keep practicing — you're close!";
+      poseSimilarityValEl.textContent += (poseSimilarityValEl.textContent ? " · " : "") + `Pose match: ${similarity}%`;
+    }
   }
+
+  recordCombo(profile, comboState.combo);
+  recordRoundResult(profile, { letter: currentTarget, correct: wasCorrect, responseMs });
+  runAchievementCheck({ lastResponseMs: responseMs, lastRoundWasCorrect: wasCorrect });
+  saveProfile(profile);
+  renderLevelBadge();
   updateStatsUI();
   renderMasteryRow();
 
+  const advanceDelay = wasCorrect ? CORRECT_ADVANCE_DELAY_MS : MISS_ADVANCE_DELAY_MS;
   if (roundIndex >= ROUNDS_TOTAL) {
-    setTimeout(showEndScreen, wasCorrect ? 900 : 1800);
+    setTimeout(showEndScreen, advanceDelay);
   } else {
-    setTimeout(startRound, wasCorrect ? 900 : 1800);
+    setTimeout(startRound, advanceDelay);
   }
 }
 
 function showEndScreen() {
   running = false;
-  gameScreen.hidden = true;
-  statsEl.hidden = true;
-  endScreen.hidden = false;
-  finalScore.textContent = String(score);
-  finalAccuracy.textContent = `${Math.round((correctCount / ROUNDS_TOTAL) * 100)}%`;
-  finalBestStreak.textContent = String(bestStreak);
+  recordGameEnd(profile, { score });
+  runAchievementCheck({ sessionEnded: true });
+  saveProfile(profile);
+  renderLevelBadge();
+
+  const session = {
+    score,
+    rounds: roundIndex,
+    correct: correctCount,
+    bestCombo: bestComboSession,
+    fastestLetter,
+    fastestResponseMs,
+    avgResponseMs: countResponses > 0 ? sumResponseMs / countResponses : null,
+    achievementsEarned: achievementsEarnedThisSession,
+  };
+  const xpGained = profile.xpTotal - xpAtGameStart;
+
+  showScreen("end");
+  renderEndReport(session, profile, xpGained);
 }
 
 function resetGameState() {
   score = 0;
-  streak = 0;
-  bestStreak = 0;
+  comboState.combo = 0;
+  comboState.lastAnnouncedTier = null;
+  bestComboSession = 0;
   roundIndex = 0;
   correctCount = 0;
+  missCount = 0;
   mastered.clear();
+  achievementsEarnedThisSession.length = 0;
+  sumResponseMs = 0;
+  countResponses = 0;
+  fastestResponseMs = null;
+  fastestLetter = null;
+  xpAtGameStart = profile.xpTotal;
 }
 
 // ===== Camera + detection loop =====
-async function setupHandLandmarker() {
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-  );
-  try {
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath:
-          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-        delegate: "GPU",
-      },
-      runningMode: "VIDEO",
-      numHands: 1,
-    });
-  } catch (e) {
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath:
-          "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-        delegate: "CPU",
-      },
-      runningMode: "VIDEO",
-      numHands: 1,
-    });
-  }
-}
-
-async function setupCamera() {
-  stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
-  video.srcObject = stream;
-  await new Promise((resolve) => (video.onloadedmetadata = resolve));
-  await video.play();
-  overlay.width = video.videoWidth;
-  overlay.height = video.videoHeight;
-}
-
-// Offscreen flipped canvas: mirrors cv2.flip(frame, 1) from the training
-// pipeline so browser landmark coordinates match what the model was trained on.
-const flipCanvas = document.createElement("canvas");
-const flipCtx = flipCanvas.getContext("2d");
-
 function detectLoop() {
   if (!running) return;
 
-  flipCanvas.width = video.videoWidth;
-  flipCanvas.height = video.videoHeight;
-  flipCtx.save();
-  flipCtx.translate(flipCanvas.width, 0);
-  flipCtx.scale(-1, 1);
-  flipCtx.drawImage(video, 0, 0, flipCanvas.width, flipCanvas.height);
-  flipCtx.restore();
-
-  const result = handLandmarker.detectForVideo(flipCanvas, performance.now());
+  const flipCanvas = getFlippedFrame(video);
+  const result = detectHands(flipCanvas);
 
   overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
   overlayCtx.drawImage(flipCanvas, 0, 0, overlay.width, overlay.height);
@@ -414,17 +416,29 @@ function detectLoop() {
   if (result.landmarks && result.landmarks.length > 0) {
     noHandBanner.hidden = true;
     const landmarks = result.landmarks[0];
-    drawSkeleton(landmarks, overlay.width, overlay.height);
+    drawSkeleton(overlayCtx, landmarks, overlay.width, overlay.height);
 
     const now = performance.now();
     if (!sendInFlight && now - lastSentAt >= SEND_INTERVAL_MS) {
       lastSentAt = now;
       sendInFlight = true;
       const features = normalizeLandmarks(landmarks);
-      requestPrediction(features).then((resp) => {
+      lastUserVector = features;
+
+      // Model input is [hand, ...63 landmarks] -- hand is 0=left/1=right,
+      // matching ai_module/training/train_model.py's df["hand"].map({"left":0,"right":1}).
+      // detectHands() already runs on the flipped canvas (mirroring cv2.flip in the
+      // training pipeline), so this handedness reads the same way Python's did.
+      const handednessLabel = result.handedness?.[0]?.[0]?.categoryName;
+      lastHandLabel = handednessLabel ? handednessLabel.toLowerCase() : null;
+      const handValue = lastHandLabel === "right" ? 1 : 0;
+      const payload = [handValue, ...features];
+
+      requestPrediction(payload).then((resp) => {
         sendInFlight = false;
         if (resp && resp.letter) {
-          pushPrediction(resp.letter, resp.confidence);
+          lastConfidence = resp.confidence;
+          smoother.push(resp.letter, resp.confidence);
         }
       });
     }
@@ -432,26 +446,35 @@ function detectLoop() {
     noHandBanner.hidden = false;
   }
 
-  const smoothed = smoothedPrediction();
+  const smoothed = smoother.smoothed();
   predictedLetterEl.textContent = smoothed || "—";
+  confidenceValEl.textContent = smoothed && lastConfidence != null ? `${Math.round(lastConfidence * 100)}%` : "";
 
   if (roundActive) {
+    const diff = currentDifficulty();
     const elapsed = performance.now() - roundStartTime;
-    const remainingPct = Math.max(0, 100 - (elapsed / ROUND_TIME_MS) * 100);
-    roundTimerBar.style.width = `${remainingPct}%`;
+    const remainingMs = Math.max(0, diff.roundTimeMs - elapsed);
+    circularTimer.update(remainingMs, diff.roundTimeMs);
+
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    if (remainingMs <= 3000 && remainingMs > 0 && remainingSec !== lastTickSecond) {
+      lastTickSecond = remainingSec;
+      playTick();
+    }
 
     if (smoothed && smoothed === currentTarget) {
       holdMs += 1000 / 30; // approx per-frame delta at ~30fps detection loop
-      holdBar.style.width = `${Math.min(100, (holdMs / HOLD_MS) * 100)}%`;
-      if (holdMs >= HOLD_MS) {
+      holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+      if (holdMs >= diff.holdMs) {
         endRound(true);
       }
     } else {
+      if (smoothed && smoothed !== currentTarget) roundHadWrongPrediction = true;
       holdMs = Math.max(0, holdMs - 1000 / 15);
-      holdBar.style.width = `${Math.min(100, (holdMs / HOLD_MS) * 100)}%`;
+      holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
     }
 
-    if (elapsed >= ROUND_TIME_MS) {
+    if (elapsed >= diff.roundTimeMs) {
       endRound(false);
     }
   }
@@ -465,8 +488,12 @@ async function startGame() {
   startBtn.disabled = true;
   startBtn.textContent = "Loading…";
   try {
-    if (!handLandmarker) await setupHandLandmarker();
-    if (!stream) await setupCamera();
+    if (!handLandmarker) handLandmarker = await setupHandLandmarker();
+    if (!stream) {
+      stream = await setupCamera(video);
+      overlay.width = video.videoWidth;
+      overlay.height = video.videoHeight;
+    }
   } catch (err) {
     alert("Camera or model failed to load: " + err.message);
     startBtn.disabled = false;
@@ -474,19 +501,21 @@ async function startGame() {
     return;
   }
 
+  smoother.setThreshold(profile.settings.sensitivity);
   resetGameState();
-  startScreen.hidden = true;
-  endScreen.hidden = true;
-  gameScreen.hidden = false;
-  statsEl.hidden = false;
+  showScreen("game");
   updateStatsUI();
 
   running = true;
   startRound();
   requestAnimationFrame(detectLoop);
+
+  startBtn.disabled = false;
+  startBtn.textContent = "Start Game";
 }
 
 startBtn.addEventListener("click", startGame);
 playAgainBtn.addEventListener("click", startGame);
 
-connectWs();
+applySettingsToUI();
+renderLevelBadge();
