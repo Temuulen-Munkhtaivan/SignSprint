@@ -108,6 +108,23 @@ cv2.destroyAllWindows()
 
 df = pd.DataFrame(data)
 df["label"] = labels
-df.to_csv(file_path, index=False)
+hand = "left"  
+
+columns = [f"{coord}{i}" for i in range(21) for coord in ["x", "y", "z"]]
+
+df = pd.DataFrame(data, columns=columns)
+df["label"] = labels
+df["hand"] = hand
+
+df = df[["label", "hand"] + columns]
+
+file_exists = os.path.isfile(file_path)
+
+df.to_csv(
+    file_path,
+    mode="a",
+    index=False,
+    header=not file_exists
+)
 
 print("Dataset saved to:", file_path)

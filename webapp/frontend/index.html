@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Academic Internship Project</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo-glow">
+        <div class="light-burst" aria-hidden="true"></div>
+        <div class="logo-plate">
+          <img id="brandLogo" class="brand-logo" src="assets/nci-logo.jpg?v=2" alt="National College of Ireland logo"
+               onerror="this.hidden=true; document.getElementById('brandLogoFallback').hidden=false;" />
+          <svg id="brandLogoFallback" class="brand-logo" viewBox="0 0 64 64" aria-hidden="true" hidden>
+            <defs>
+              <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#081F5C" />
+                <stop offset="1" stop-color="#D0E3FF" />
+              </linearGradient>
+            </defs>
+            <rect x="1" y="1" width="62" height="62" rx="16" fill="url(#logoGrad)" />
+            <g fill="#ffffff">
+              <rect x="18" y="30" width="28" height="26" rx="10" />
+              <rect x="20" y="14" width="7" height="20" rx="3.5" transform="rotate(-10 23.5 24)" />
+              <rect x="28.5" y="9" width="7" height="25" rx="3.5" />
+              <rect x="37" y="7" width="7" height="27" rx="3.5" />
+              <rect x="45" y="11" width="7" height="23" rx="3.5" transform="rotate(12 48.5 22.5)" />
+              <rect x="9" y="29" width="9" height="18" rx="4.5" transform="rotate(-40 13.5 38)" />
+            </g>
+          </svg>
+        </div>
+      </div>
+      <div class="brand-text">
+        <span class="brand-title">Academic Internship Project</span>
+        <span class="brand-subtitle">ASL Sign Language Game</span>
+      </div>
+    </div>
+
+    <div class="level-badge" id="levelBadge" title="Level progress">
+      <span id="levelNum">Lv 1</span>
+      <div class="xp-track"><div class="xp-fill" id="xpFill"></div></div>
+    </div>
+
+    <div class="stats" id="stats" hidden>
+      <div class="stat"><span class="stat-label">Score</span><span id="scoreVal">0</span></div>
+      <div class="stat"><span class="stat-label">Combo</span><span id="comboVal">0</span></div>
+      <div class="stat"><span class="stat-label">Round</span><span id="roundVal">0/0</span></div>
+    </div>
+
+    <div class="topbar-actions">
+      <button id="modeToggleBtn" class="icon-btn" aria-label="Toggle dark/light mode">🌙</button>
+      <button id="muteBtn" class="icon-btn" aria-label="Toggle sound">🔊</button>
+      <button id="statsBtn" class="icon-btn" aria-label="View statistics">📊</button>
+      <button id="settingsBtn" class="icon-btn" aria-label="Open settings">⚙️</button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ===== Start screen ===== -->
+    <section id="startScreen" class="screen fade-in hero-glow-wrap">
+      <div class="light-burst" aria-hidden="true"></div>
+      <div class="screen-content">
+        <p class="tagline">Show the letter with your hand. Beat the clock. Learn ASL fingerspelling while you play.</p>
+        <div class="mode-badge">Classic Mode · 15 rounds</div>
+        <button id="startBtn" class="btn btn-primary">Start Game</button>
+        <p class="hint">Needs camera access. Works best in good lighting with your hand fully in frame.</p>
+      </div>
+    </section>
+
+    <!-- ===== Game screen ===== -->
+    <section id="gameScreen" class="screen fade-in" hidden>
+
+      <div class="game-grid">
+
+        <div class="camera-pane">
+          <div class="camera-wrap glass">
+            <video id="video" playsinline autoplay muted hidden></video>
+            <canvas id="overlay"></canvas>
+            <div id="noHandBanner" class="no-hand-banner" hidden>Show your hand to the camera</div>
+
+            <svg class="circular-timer" viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="timer-track" cx="60" cy="60" r="54"></circle>
+              <circle class="timer-progress" id="timerCircle" cx="60" cy="60" r="54"></circle>
+            </svg>
+            <div class="timer-text" id="timerText">12</div>
+          </div>
+          <div class="hold-track"><div id="holdBar" class="hold-bar"></div></div>
+        </div>
+
+        <div class="prompt-pane glass">
+          <div class="target-label">Sign this letter</div>
+          <div id="targetLetter" class="target-letter">A</div>
+
+          <div id="comboPopup" class="combo-popup"></div>
+
+          <div class="predicted-row">
+            <span class="predicted-label">You're showing:</span>
+            <span id="predictedLetter" class="predicted-letter">—</span>
+            <span id="confidenceVal" class="confidence-val"></span>
+          </div>
+
+          <div id="feedbackPanel" class="feedback-panel" hidden>
+            <div id="feedbackTitle" class="feedback-title"></div>
+            <div class="feedback-meta">
+              <span id="responseTimeVal"></span>
+              <span id="poseSimilarityVal"></span>
+            </div>
+            <div id="coachingHint" class="coaching-hint"></div>
+            <div id="referencePanel" class="reference-panel" hidden>
+              <img id="referenceImg" alt="Reference handshape" />
+              <p id="referenceCue" class="reference-cue"></p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="mastery-row" id="masteryRow"></div>
+
+    </section>
+
+    <!-- ===== Game over / detailed report screen ===== -->
+    <section id="endScreen" class="screen fade-in" hidden>
+      <h2>Session Complete!</h2>
+      <div class="grade-badge" id="finalGrade">A</div>
+
+      <div class="end-stats">
+        <div class="end-stat"><span id="finalScore">0</span><label>Points</label></div>
+        <div class="end-stat"><span id="finalAccuracy">0%</span><label>Accuracy</label></div>
+        <div class="end-stat"><span id="finalBestCombo">0</span><label>Best Combo</label></div>
+        <div class="end-stat"><span id="finalAvgResponse">—</span><label>Avg Response</label></div>
+        <div class="end-stat"><span id="finalFastestLetter">—</span><label>Fastest Letter</label></div>
+      </div>
+
+      <div class="end-columns">
+        <div class="end-col">
+          <h3>Letters to practice</h3>
+          <ul id="finalPracticeList" class="chip-list"></ul>
+        </div>
+        <div class="end-col">
+          <h3>Achievements earned</h3>
+          <ul id="finalAchievementsList" class="chip-list"></ul>
+        </div>
+      </div>
+
+      <div class="level-progress-block">
+        <div id="finalXpGained" class="xp-gained">+0 XP</div>
+        <div id="finalLevelText" class="level-text">Level 1 — 0/100 XP</div>
+        <div class="xp-track wide"><div id="finalLevelBar" class="xp-fill"></div></div>
+      </div>
+
+      <div class="end-actions">
+        <button id="playAgainBtn" class="btn btn-primary">Play Again</button>
+        <button id="viewStatsFromEndBtn" class="btn btn-secondary">View Stats</button>
+      </div>
+    </section>
+
+    <!-- ===== Stats / profile screen ===== -->
+    <section id="statsScreen" class="screen fade-in" hidden>
+      <h2>Your Progress</h2>
+      <div class="end-stats">
+        <div class="end-stat"><span id="statGamesPlayed">0</span><label>Games Played</label></div>
+        <div class="end-stat"><span id="statAvgAccuracy">0%</span><label>Avg Accuracy</label></div>
+        <div class="end-stat"><span id="statFastestResponse">—</span><label>Fastest Response</label></div>
+        <div class="end-stat"><span id="statAvgResponse">—</span><label>Avg Response</label></div>
+        <div class="end-stat"><span id="statBestCombo">0</span><label>Best Combo</label></div>
+        <div class="end-stat"><span id="statHighestScore">0</span><label>Highest Score</label></div>
+        <div class="end-stat"><span id="statLettersMastered">0/24</span><label>Letters Mastered</label></div>
+      </div>
+
+      <h3>Accuracy by letter</h3>
+      <canvas id="statLetterChart" class="letter-chart"></canvas>
+
+      <h3>Needs practice</h3>
+      <ul id="statPracticeList" class="chip-list"></ul>
+
+      <div class="end-actions">
+        <button id="backFromStatsBtn" class="btn btn-secondary">Back</button>
+      </div>
+    </section>
+
+    <!-- ===== Settings screen ===== -->
+    <section id="settingsScreen" class="screen fade-in" hidden>
+      <h2>Settings</h2>
+
+      <div class="settings-grid">
+        <label class="settings-row">
+          <span>Appearance</span>
+          <select id="modeSelect">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+
+        <label class="settings-row">
+          <span>Difficulty</span>
+          <select id="difficultySelect">
+            <option value="easy">Easy</option>
+            <option value="normal">Normal</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+
+        <label class="settings-row">
+          <span>Recognition sensitivity <small>(lower = more forgiving)</small></span>
+          <input type="range" id="sensitivitySlider" min="0.5" max="0.95" step="0.05" />
+        </label>
+
+        <label class="settings-row">
+          <span>Volume</span>
+          <input type="range" id="volumeSlider" min="0" max="1" step="0.05" />
+        </label>
+
+        <label class="settings-row checkbox-row">
+          <input type="checkbox" id="muteCheckbox" />
+          <span>Mute all sound</span>
+        </label>
+
+        <label class="settings-row checkbox-row">
+          <input type="checkbox" id="colorblindCheckbox" />
+          <span>Colorblind-friendly palette</span>
+        </label>
+
+        <label class="settings-row">
+          <span>Theme <small id="themeUnlockHint"></small></span>
+          <select id="themeSelect"></select>
+        </label>
+      </div>
+
+      <div class="calibration-tips glass">
+        <h3>Camera tips</h3>
+        <ul>
+          <li>Sit in a well-lit room, facing a light source rather than having it behind you.</li>
+          <li>Keep your whole hand inside the frame, roughly arm's length from the camera.</li>
+          <li>Plain backgrounds behind your hand track more reliably than busy ones.</li>
+          <li>If predictions feel unstable, try the Easy difficulty or lower sensitivity.</li>
+        </ul>
+      </div>
+
+      <div class="end-actions">
+        <button id="backFromSettingsBtn" class="btn btn-secondary">Back</button>
+      </div>
+    </section>
+
+    <div id="connectionBanner" class="connection-banner" hidden></div>
+  </main>
+</div>
+
+<div id="achievementToasts" class="achievement-toasts" aria-live="polite"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
