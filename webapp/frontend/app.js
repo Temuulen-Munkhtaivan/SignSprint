@@ -250,6 +250,8 @@ let roundActive = false;
 let correctCount = 0;
 let missCount = 0;
 let roundHadWrongPrediction = false;
+let lastLetterAcceptedAt = 0;
+const REPEATED_LETTER_DELAY_MS = 700;
 let lastTickSecond = null;
 const mastered = new Set();
 const achievementsEarnedThisSession = [];
@@ -260,10 +262,59 @@ let fastestLetter = null;
 let xpAtGameStart = 0;
 
 let gameMode = null;
-const SIMPLE_WORDS = ["CAB", "CAT", "LAB", "HELLO", "HI", "DOG", "LET", "TAKE", "CUTE", "RUN", "ONE"];
+const WORDS = {
+    easy: [
+        "cat", "dog", "hat", "pen", "cup",
+        "sun", "map", "fish", "book", "tree",
+        "ball", "milk", "shoe", "bird", "star"
+    ],
+
+    normal: [
+        "apple", "banana", "school", "orange", "friend",
+        "camera", "window", "teacher", "laptop", "garden",
+        "bottle", "rabbit", "pencil", "guitar", "library"
+    ],
+
+    hard: [
+        "elephant", "beautiful", "adventure", "technology",
+        "development", "communication", "environment",
+        "information", "responsibility", "university",
+        "recognition", "application", "performance",
+        "programming", "artificial"
+    ]
+};
 let currentWord = "";
 let currentWordTarget = "";
 let lastAcceptedLetter = null;
+let roundWords = [];
+let currentRound = 0;
+
+
+function getWordsForCurrentDifficulty() {
+  const difficulty = String(
+    profile.settings.difficulty || "easy"
+  ).toLowerCase();
+
+  return WORDS[difficulty] || WORDS.easy;
+}
+
+function prepareRoundWords() {
+  const availableWords = getWordsForCurrentDifficulty()
+    .map((word) => word.toUpperCase());
+
+  roundWords = [...availableWords]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, WORD_ROUNDS_TOTAL);
+}
+
+function pickNextWord() {
+  if (!roundWords.length) {
+    prepareRoundWords();
+  }
+
+  return roundWords[roundIndex] || roundWords[0];
+}
+
 
 function updateModeBadge(mode = null) {
   if (mode === "letters") {
@@ -274,8 +325,28 @@ function updateModeBadge(mode = null) {
     modeBadge.textContent = "Choose a mode";
   }
 
-  lettersModeBtn?.classList.toggle("selected", mode === "letters");
-  wordsModeBtn?.classList.toggle("selected", mode === "words");
+  lettersModeBtn?.classList.toggle(
+    "selected",
+    mode === "letters"
+  );
+
+  wordsModeBtn?.classList.toggle(
+    "selected",
+    mode === "words"
+  );
+}
+
+function displayCurrentLetter(letter) {
+  const targetLabel = document.getElementById("targetLabel");
+  const targetLetter = document.getElementById("targetLetter");
+  const wordProgress = document.getElementById("wordProgress");
+
+  targetLabel.textContent = "Sign this letter";
+
+  targetLetter.hidden = false;
+  wordProgress.hidden = true;
+
+  targetLetter.textContent = letter.toUpperCase();
 }
 
 function pickNextLetter() {
@@ -286,13 +357,7 @@ function pickNextLetter() {
   return letter;
 }
 
-function pickNextWord() {
-  let word;
-  do {
-    word = SIMPLE_WORDS[Math.floor(Math.random() * SIMPLE_WORDS.length)];
-  } while (word === currentWordTarget && SIMPLE_WORDS.length > 1);
-  return word;
-}
+
 
 function renderMasteryRow() {
   masteryRow.innerHTML = "";
@@ -378,8 +443,12 @@ function startRound() {
     currentWordTarget = pickNextWord();
     currentTarget = currentWordTarget;
     lastAcceptedLetter = null;
+    lastLetterAcceptedAt = 0;
+
     targetLabelEl.textContent = "Sign this word";
+    targetLetterEl.hidden = false;
     targetLetterEl.textContent = currentWordTarget;
+
     wordProgressEl.hidden = false;
     wordProgressEl.textContent = "Current: —";
   }
@@ -514,6 +583,11 @@ function resetGameState() {
   currentWord = "";
   currentWordTarget = "";
   lastAcceptedLetter = null;
+  roundWords = [];
+
+    if (gameMode === "words") {
+      prepareRoundWords();
+    }
 }
 
 // ===== Camera + detection loop =====
@@ -588,26 +662,42 @@ function detectLoop() {
       const nextNeeded = currentWordTarget[currentWord.length];
 
       if (smoothed && smoothed === nextNeeded) {
-        holdMs += 1000 / 30;
-        holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+         const now = performance.now();
 
-        if (holdMs >= diff.holdMs && lastAcceptedLetter !== smoothed) {
-          currentWord += smoothed;
-          lastAcceptedLetter = smoothed;
-          holdMs = 0;
-          holdBar.style.width = "0%";
-          wordProgressEl.textContent = `Current: ${currentWord}`;
+         const repeatedLetter =
+            lastAcceptedLetter === smoothed;
 
-          if (currentWord === currentWordTarget) {
-            endRound(true);
-          }
-        }
+         const repeatDelayFinished =
+            now - lastLetterAcceptedAt >= REPEATED_LETTER_DELAY_MS;
+
+         if (!repeatedLetter || repeatDelayFinished) {
+            holdMs += 1000 / 30;
+            holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+
+            if (holdMs >= diff.holdMs) {
+                currentWord += smoothed;
+                lastAcceptedLetter = smoothed;
+                lastLetterAcceptedAt = now;
+
+                holdMs = 0;
+                holdBar.style.width = "0%";
+                wordProgressEl.textContent = `Current: ${currentWord}`;
+
+                if (currentWord === currentWordTarget) {
+                    endRound(true);
+                }
+            }
+         }
       } else {
-        if (smoothed && smoothed !== nextNeeded) roundHadWrongPrediction = true;
-        if (smoothed !== lastAcceptedLetter) lastAcceptedLetter = null;
-        holdMs = Math.max(0, holdMs - 1000 / 15);
-        holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
-      }
+          if (smoothed && smoothed !== nextNeeded)
+            roundHadWrongPrediction = true;
+
+          if (smoothed !== lastAcceptedLetter)
+            lastAcceptedLetter = null;
+
+          holdMs = Math.max(0, holdMs - 1000 / 15);
+          holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+      } 
     }
 
     if (elapsed >= roundTimeMs) {

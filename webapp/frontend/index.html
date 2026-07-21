@@ -68,11 +68,26 @@
         <p class="tagline">Show the letter with your hand. Beat the clock. Learn ASL fingerspelling while you play.</p>
         <div class="mode-badge" id="modeBadge">Choose a mode</div>
         <div class="mode-select">
-          <button id="lettersModeBtn" class="btn btn-secondary">Letter Mode</button>
-          <button id="wordsModeBtn" class="btn btn-secondary">Word Mode</button>
+          <button id="lettersModeBtn" class="mode-card" type="button">
+
+            <span class="mode-text">
+               <span class="mode-title">Letter Mode</span>
+               <span class="mode-description">
+                  Practice individual ASL letters
+               </span>
+            </span>
+          </button>
+
+          <button id="wordsModeBtn" class="mode-card" type="button">
+
+             <span class="mode-text">
+               <span class="mode-title">Word Mode</span>
+               <span class="mode-description">
+                Spell complete words across 5 rounds
+               </span>
+             </span>
+          </button>
         </div>
-        <p class="hint">Needs camera access. Works best in good lighting with your hand fully in frame.</p>
-      </div>
     </section>
 
     <section id="gameScreen" class="screen fade-in" hidden>

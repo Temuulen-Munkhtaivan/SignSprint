@@ -320,15 +320,18 @@ body[data-mode="light"] .light-burst::before { opacity: 0.55; }
 }
 
 .mode-badge {
-  display: inline-block;
-  padding: 6px 16px;
-  border-radius: 999px;
-  background: var(--card);
-  border: 1px solid var(--card-border);
+  display: block;
+
+  background: none;
+  border: none;
+
   color: var(--accent-3);
-  font-size: 0.8rem;
-  font-weight: 700;
-  margin-bottom: 20px;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+
+  text-align: center;
+  margin-bottom: 30px;
 }
 
 .hint {
@@ -410,6 +413,93 @@ button:disabled {
   border-radius: 999px;
   font-size: 0.85rem;
 }
+
+/* ===== Mode Selection ===== */
+
+.mode-select{
+    display:flex;
+    justify-content:center;
+    align-items:stretch;
+    gap:30px;
+
+    width:100%;
+    max-width:900px;
+    margin:40px auto;
+}
+
+.mode-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+
+  min-height: 130px;
+  padding: 24px;
+
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.mode-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.mode-card:active {
+  transform: translateY(-1px);
+}
+
+.mode-card.selected {
+  border-color: #7c5cff;
+  background: rgba(124, 92, 255, 0.18);
+  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.12);
+}
+
+.mode-icon {
+  flex-shrink: 0;
+  font-size: 42px;
+  line-height: 1;
+}
+
+.mode-text {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.mode-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.mode-description {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  opacity: 0.72;
+}
+
+@media (max-width: 650px) {
+  .mode-select {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-card {
+    min-height: 110px;
+  }
+}
+
 
 /* ===== Circular countdown timer ===== */
 .circular-timer {
