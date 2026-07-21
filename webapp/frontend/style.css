@@ -367,6 +367,17 @@ body[data-mode="light"] .light-burst::before { opacity: 0.55; }
 }
 .btn-secondary:hover { background: var(--bg-3); }
 
+.mode-select .selected {
+  outline: 2px solid #fff;
+  transform: scale(1.03);
+  box-shadow: 0 0 18px rgba(255,255,255,0.25);
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 /* ===== Game layout ===== */
 .game-grid {
   display: grid;

@@ -18,10 +18,17 @@ async def predict_ws(websocket: WebSocket):
         while True:
             payload = await websocket.receive_json()
             landmarks = payload.get("landmarks")
+            mode = payload.get("mode", "letters")  # letters or words
 
             if not isinstance(landmarks, list) or len(landmarks) != model_service.NUM_FEATURES:
                 await websocket.send_json({
                     "error": f"expected 'landmarks' as a list of {model_service.NUM_FEATURES} floats"
+                })
+                continue
+
+            if mode not in ["letters", "words"]:
+                await websocket.send_json({
+                    "error": "invalid mode, must be 'letters' or 'words'"
                 })
                 continue
 
@@ -31,10 +38,13 @@ async def predict_ws(websocket: WebSocket):
                 await websocket.send_json({"error": "invalid landmark values"})
                 continue
 
-            await websocket.send_json({"letter": letter, "confidence": confidence})
+            await websocket.send_json({
+                "mode": mode,
+                "letter": letter,
+                "confidence": confidence
+            })
     except WebSocketDisconnect:
         pass
 
 
-# Serve the game frontend as static files (same origin as the API -> no CORS).
 app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
