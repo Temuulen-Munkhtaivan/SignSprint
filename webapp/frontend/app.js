@@ -253,7 +253,7 @@ let correctCount = 0;
 let missCount = 0;
 let roundHadWrongPrediction = false;
 let lastLetterAcceptedAt = 0;
-const REPEATED_LETTER_DELAY_MS = 700;
+const REPEATED_LETTER_DELAY_MS = 1000;
 let lastTickSecond = null;
 const mastered = new Set();
 const achievementsEarnedThisSession = [];
@@ -415,21 +415,97 @@ function runAchievementCheck(extra = {}) {
   }
 }
 
-function startRound() {
-  currentTarget = pickNextLetter();
-  resetMotionDetector(currentTarget);
+function updateWordProgress() {
+  if (gameMode !== "words") {
+    wordProgressEl.hidden = true;
+    return;
+  }
 
-  targetLetterEl.textContent = currentTarget;
+  const completed = currentWord
+    .split("")
+    .map((letter) => `<span class="word-letter completed">${letter}</span>`)
+    .join("");
+
+  const activeIndex = currentWord.length;
+
+  const remaining = currentWordTarget
+    .slice(activeIndex)
+    .split("")
+    .map((letter, index) => {
+      const className =
+        index === 0 ? "word-letter active" : "word-letter";
+
+      return `<span class="${className}">${letter}</span>`;
+    })
+    .join("");
+
+  wordProgressEl.innerHTML = completed + remaining;
+}
+
+function acceptWordLetter(letter) {
+  if (gameMode !== "words" || !roundActive) {
+    return;
+  }
+
+  const expectedLetter =
+    currentWordTarget[currentWord.length];
+
+  if (letter !== expectedLetter) {
+    return;
+  }
+
+  const now = performance.now();
+
+  // Prevent one held pose from being accepted repeatedly.
+  if (
+    lastAcceptedLetter === letter &&
+    now - lastLetterAcceptedAt < REPEATED_LETTER_DELAY_MS
+  ) {
+    return;
+  }
+
+  currentWord += letter;
+  lastAcceptedLetter = letter;
+  lastLetterAcceptedAt = now;
+
+  playCorrectSound();
+
+  holdMs = 0;
+  holdBar.style.width = "0%";
+
+  updateWordProgress();
+
+  // Whole word completed.
+  if (currentWord === currentWordTarget) {
+    holdBar.style.width = "100%";
+    endRound(true);
+    return;
+  }
+
+  // Move to the next expected letter.
+  currentTarget =
+    currentWordTarget[currentWord.length];
+
+  resetMotionDetector(currentTarget);
+  smoother.reset();
+
+  predictedLetterEl.textContent = "—";
+  confidenceValEl.textContent = "";
+}
+
+function startRound() {
   holdMs = 0;
   holdBar.style.width = "0%";
   roundStartTime = performance.now();
   roundActive = true;
   roundHadWrongPrediction = false;
   lastTickSecond = null;
+
   feedbackPanel.hidden = true;
   feedbackPanel.classList.remove("correct", "miss");
   referencePanel.hidden = true;
   coachingHintEl.textContent = "";
+
   smoother.reset();
   predictedLetterEl.textContent = "—";
   confidenceValEl.textContent = "";
@@ -437,26 +513,37 @@ function startRound() {
 
   if (gameMode === "letters") {
     currentTarget = pickNextLetter();
+
     currentWord = "";
     currentWordTarget = "";
     lastAcceptedLetter = null;
+
     targetLabelEl.textContent = "Sign this letter";
+    targetLetterEl.hidden = false;
     targetLetterEl.textContent = currentTarget;
+
     wordProgressEl.hidden = true;
     wordProgressEl.textContent = "";
+
+    resetMotionDetector(currentTarget);
   } else {
     currentWord = "";
     currentWordTarget = pickNextWord();
-    currentTarget = currentWordTarget;
+
+    // The current target must be one letter, not the whole word.
+    currentTarget = currentWordTarget[0];
+
     lastAcceptedLetter = null;
     lastLetterAcceptedAt = 0;
 
-    targetLabelEl.textContent = "Sign this word";
+    targetLabelEl.textContent = "Spell this word";
     targetLetterEl.hidden = false;
     targetLetterEl.textContent = currentWordTarget;
 
     wordProgressEl.hidden = false;
-    wordProgressEl.textContent = "Current: —";
+    updateWordProgress();
+
+    resetMotionDetector(currentTarget);
   }
 
   renderMasteryRow();
@@ -496,7 +583,10 @@ function endRound(wasCorrect) {
     feedbackTitle.textContent = `Correct! +${pointsAwarded} pts`;
     addXp(profile, XP_CORRECT * multiplier);
     maybeShowComboPopup(comboState, tier, comboState.combo);
-    playCorrectSound();
+    if (gameMode !== "words") {
+      playCorrectSound();
+    }
+
     burstConfetti();
     glowPulse(document.querySelector(".camera-wrap"));
   } else {
@@ -630,10 +720,12 @@ function detectLoop() {
       // Instantly complete the progress bar
       holdBar.style.width = "100%";
 
-      // J/Z movements are already complete,
-      // so they do not need the static-letter hold timer.
-      endRound(true);
-    }
+      if (gameMode === "words") {
+      acceptWordLetter(motionPrediction);
+      } else {
+        endRound(true);
+      }
+  }
     if (!sendInFlight && now - lastSentAt >= SEND_INTERVAL_MS) {
       lastSentAt = now;
       sendInFlight = true;
@@ -694,35 +786,49 @@ function detectLoop() {
       finalPrediction &&
       finalPrediction === currentTarget
     ) {
-      const isMotionTarget =
-        currentTarget === "J" || currentTarget === "Z";
 
-      if (
-        isMotionTarget &&
-        motionPrediction === currentTarget
-      ) {
-        holdBar.style.width = "100%";
-        endRound(true);
-      }
-
-      // Existing behaviour for static letters
       holdMs += 1000 / 30;
 
       holdBar.style.width =
-        `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+        `${Math.min(
+          100,
+          (holdMs / diff.holdMs) * 100
+        )}%`;
 
       if (holdMs >= diff.holdMs) {
-        endRound(true);
+
+        if (gameMode === "words") {
+
+          acceptWordLetter(finalPrediction);
+
+        } else {
+
+          endRound(true);
+
+        }
+
       }
-    }else {
+
+    } else {
+
       if (
         finalPrediction &&
         finalPrediction !== currentTarget
       ) {
         roundHadWrongPrediction = true;
       }
-      holdMs = Math.max(0, holdMs - 1000 / 15);
-      holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+
+      holdMs = Math.max(
+        0,
+        holdMs - 1000 / 15
+      );
+
+      holdBar.style.width =
+        `${Math.min(
+          100,
+          (holdMs / diff.holdMs) * 100
+        )}%`;
+
     }
 
     if (elapsed >= roundTimeMs) {
