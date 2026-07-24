@@ -1,4 +1,4 @@
-export const LETTERS = ["A","B","C","D","E","F","G","H","I","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y"];
+export const LETTERS = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"];
 
 // Short ASL fingerspelling cues used as a fallback when no reference image is
 // supplied at assets/letters/<LETTER>.png (see that folder's README).
@@ -12,6 +12,7 @@ export const LETTER_CUES = {
   G: "Index finger and thumb point sideways, like a small gun shape.",
   H: "Index and middle finger extended together, pointing sideways.",
   I: "Pinky finger up, other fingers in a fist.",
+  J: "Draw a J in the air with the pinky finger.",
   K: "Index and middle finger up in a V, thumb between them.",
   L: "Thumb and index finger form an L, other fingers folded.",
   M: "Thumb tucked under three fingers (index, middle, ring).",
@@ -27,6 +28,7 @@ export const LETTER_CUES = {
   W: "Index, middle, and ring finger up, spread apart.",
   X: "Index finger curled into a hook shape.",
   Y: "Thumb and pinky extended, other fingers folded down.",
+  Z: "Draw a Z in the air with the index finger.",
 };
 
 export const ROUNDS_TOTAL = 15;

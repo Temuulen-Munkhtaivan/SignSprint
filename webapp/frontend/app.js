@@ -1,3 +1,4 @@
+import { resetMotionDetector, updateMotionDetector, } from "./js/motionDetector.js";
 import { LETTERS, LETTER_CUES, ROUNDS_TOTAL, SEND_INTERVAL_MS, HISTORY_LEN, DIFFICULTIES, XP_CORRECT, XP_MISS, unlockedThemes, CORRECT_ADVANCE_DELAY_MS, MISS_ADVANCE_DELAY_MS } from "./js/config.js";
 import {
   loadProfile, saveProfile, getLevelInfo, addXp,
@@ -237,7 +238,8 @@ let sendInFlight = false;
 let lastSentAt = 0;
 let lastConfidence = null;
 let lastUserVector = null;
-let lastHandLabel = null;
+let lastHandLabel = null; // "left" | "right", matches ai_module's hand encoding
+let motionCompletedAt = null;
 
 let score = 0;
 const comboState = createComboState();
@@ -251,7 +253,7 @@ let correctCount = 0;
 let missCount = 0;
 let roundHadWrongPrediction = false;
 let lastLetterAcceptedAt = 0;
-const REPEATED_LETTER_DELAY_MS = 700;
+const REPEATED_LETTER_DELAY_MS = 1000;
 let lastTickSecond = null;
 const mastered = new Set();
 const achievementsEarnedThisSession = [];
@@ -413,6 +415,84 @@ function runAchievementCheck(extra = {}) {
   }
 }
 
+function updateWordProgress() {
+  if (gameMode !== "words") {
+    wordProgressEl.hidden = true;
+    return;
+  }
+
+  const completed = currentWord
+    .split("")
+    .map((letter) => `<span class="word-letter completed">${letter}</span>`)
+    .join("");
+
+  const activeIndex = currentWord.length;
+
+  const remaining = currentWordTarget
+    .slice(activeIndex)
+    .split("")
+    .map((letter, index) => {
+      const className =
+        index === 0 ? "word-letter active" : "word-letter";
+
+      return `<span class="${className}">${letter}</span>`;
+    })
+    .join("");
+
+  wordProgressEl.innerHTML = completed + remaining;
+}
+
+function acceptWordLetter(letter) {
+  if (gameMode !== "words" || !roundActive) {
+    return;
+  }
+
+  const expectedLetter =
+    currentWordTarget[currentWord.length];
+
+  if (letter !== expectedLetter) {
+    return;
+  }
+
+  const now = performance.now();
+
+  // Prevent one held pose from being accepted repeatedly.
+  if (
+    lastAcceptedLetter === letter &&
+    now - lastLetterAcceptedAt < REPEATED_LETTER_DELAY_MS
+  ) {
+    return;
+  }
+
+  currentWord += letter;
+  lastAcceptedLetter = letter;
+  lastLetterAcceptedAt = now;
+
+  playCorrectSound();
+
+  holdMs = 0;
+  holdBar.style.width = "0%";
+
+  updateWordProgress();
+
+  // Whole word completed.
+  if (currentWord === currentWordTarget) {
+    holdBar.style.width = "100%";
+    endRound(true);
+    return;
+  }
+
+  // Move to the next expected letter.
+  currentTarget =
+    currentWordTarget[currentWord.length];
+
+  resetMotionDetector(currentTarget);
+  smoother.reset();
+
+  predictedLetterEl.textContent = "—";
+  confidenceValEl.textContent = "";
+}
+
 function startRound() {
   holdMs = 0;
   holdBar.style.width = "0%";
@@ -420,10 +500,12 @@ function startRound() {
   roundActive = true;
   roundHadWrongPrediction = false;
   lastTickSecond = null;
+
   feedbackPanel.hidden = true;
   feedbackPanel.classList.remove("correct", "miss");
   referencePanel.hidden = true;
   coachingHintEl.textContent = "";
+
   smoother.reset();
   predictedLetterEl.textContent = "—";
   confidenceValEl.textContent = "";
@@ -431,28 +513,39 @@ function startRound() {
 
   if (gameMode === "letters") {
     currentTarget = pickNextLetter();
+
     currentWord = "";
     currentWordTarget = "";
     lastAcceptedLetter = null;
+
     targetLabelEl.textContent = "Sign this letter";
     targetLetterEl.classList.remove("word-target");
+    targetLetterEl.hidden = false;
     targetLetterEl.textContent = currentTarget;
+
     wordProgressEl.hidden = true;
     wordProgressEl.textContent = "";
+
+    resetMotionDetector(currentTarget);
   } else {
     currentWord = "";
     currentWordTarget = pickNextWord();
-    currentTarget = currentWordTarget;
+
+    // The current target must be one letter, not the whole word.
+    currentTarget = currentWordTarget[0];
+
     lastAcceptedLetter = null;
     lastLetterAcceptedAt = 0;
 
-    targetLabelEl.textContent = "Sign this word";
+    targetLabelEl.textContent = "Spell this word";
     targetLetterEl.hidden = false;
     targetLetterEl.classList.add("word-target");
     targetLetterEl.textContent = currentWordTarget;
 
     wordProgressEl.hidden = false;
-    wordProgressEl.textContent = "Current: —";
+    updateWordProgress();
+
+    resetMotionDetector(currentTarget);
   }
 
   renderMasteryRow();
@@ -492,7 +585,10 @@ function endRound(wasCorrect) {
     feedbackTitle.textContent = `Correct! +${pointsAwarded} pts`;
     addXp(profile, XP_CORRECT * multiplier);
     maybeShowComboPopup(comboState, tier, comboState.combo);
-    playCorrectSound();
+    if (gameMode !== "words") {
+      playCorrectSound();
+    }
+
     burstConfetti();
     glowPulse(document.querySelector(".camera-wrap"));
   } else {
@@ -608,6 +704,30 @@ function detectLoop() {
     drawSkeleton(overlayCtx, landmarks, overlay.width, overlay.height);
 
     const now = performance.now();
+    const motionPrediction = updateMotionDetector(
+      landmarks,
+      currentTarget,
+      now
+    );
+
+    const isMotionTarget =
+      currentTarget === "J" || currentTarget === "Z";
+
+    if (
+      isMotionTarget &&
+      motionPrediction === currentTarget
+    ) {
+      console.log("Motion letter completed:", motionPrediction);
+
+      // Instantly complete the progress bar
+      holdBar.style.width = "100%";
+
+      if (gameMode === "words") {
+      acceptWordLetter(motionPrediction);
+      } else {
+        endRound(true);
+      }
+  }
     if (!sendInFlight && now - lastSentAt >= SEND_INTERVAL_MS) {
       lastSentAt = now;
       sendInFlight = true;
@@ -631,9 +751,25 @@ function detectLoop() {
     noHandBanner.hidden = false;
   }
 
-  const smoothed = smoother.smoothed();
-  predictedLetterEl.textContent = smoothed || "—";
-  confidenceValEl.textContent = smoothed && lastConfidence != null ? `${Math.round(lastConfidence * 100)}%` : "";
+  const staticPrediction = smoother.smoothed();
+
+  const isMotionTarget =
+    currentTarget === "J" || currentTarget === "Z";
+
+  // J and Z are handled immediately above when their
+  // complete movement is detected.
+  const finalPrediction =
+    isMotionTarget ? null : staticPrediction;
+
+  predictedLetterEl.textContent =
+  finalPrediction || "—";
+
+  confidenceValEl.textContent =
+    !isMotionTarget &&
+    finalPrediction &&
+    lastConfidence != null
+      ? `${Math.round(lastConfidence * 100)}%`
+      : "";
 
   if (roundActive) {
     const diff = currentDifficulty();
@@ -648,58 +784,53 @@ function detectLoop() {
       playTick();
     }
 
-    if (gameMode === "letters") {
-      if (smoothed && smoothed === currentTarget) {
-        holdMs += 1000 / 30;
-        holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
-        if (holdMs >= diff.holdMs) {
+    if (
+      finalPrediction &&
+      finalPrediction === currentTarget
+    ) {
+
+      holdMs += 1000 / 30;
+
+      holdBar.style.width =
+        `${Math.min(
+          100,
+          (holdMs / diff.holdMs) * 100
+        )}%`;
+
+      if (holdMs >= diff.holdMs) {
+
+        if (gameMode === "words") {
+
+          acceptWordLetter(finalPrediction);
+
+        } else {
+
           endRound(true);
+
         }
-      } else {
-        if (smoothed && smoothed !== currentTarget) roundHadWrongPrediction = true;
-        holdMs = Math.max(0, holdMs - 1000 / 15);
-        holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+
       }
+
     } else {
-      const nextNeeded = currentWordTarget[currentWord.length];
 
-      if (smoothed && smoothed === nextNeeded) {
-         const now = performance.now();
+      if (
+        finalPrediction &&
+        finalPrediction !== currentTarget
+      ) {
+        roundHadWrongPrediction = true;
+      }
 
-         const repeatedLetter =
-            lastAcceptedLetter === smoothed;
+      holdMs = Math.max(
+        0,
+        holdMs - 1000 / 15
+      );
 
-         const repeatDelayFinished =
-            now - lastLetterAcceptedAt >= REPEATED_LETTER_DELAY_MS;
+      holdBar.style.width =
+        `${Math.min(
+          100,
+          (holdMs / diff.holdMs) * 100
+        )}%`;
 
-         if (!repeatedLetter || repeatDelayFinished) {
-            holdMs += 1000 / 30;
-            holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
-
-            if (holdMs >= diff.holdMs) {
-                currentWord += smoothed;
-                lastAcceptedLetter = smoothed;
-                lastLetterAcceptedAt = now;
-
-                holdMs = 0;
-                holdBar.style.width = "0%";
-                wordProgressEl.textContent = `Current: ${currentWord}`;
-
-                if (currentWord === currentWordTarget) {
-                    endRound(true);
-                }
-            }
-         }
-      } else {
-          if (smoothed && smoothed !== nextNeeded)
-            roundHadWrongPrediction = true;
-
-          if (smoothed !== lastAcceptedLetter)
-            lastAcceptedLetter = null;
-
-          holdMs = Math.max(0, holdMs - 1000 / 15);
-          holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
-      } 
     }
 
     if (elapsed >= roundTimeMs) {
