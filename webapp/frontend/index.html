@@ -15,7 +15,7 @@
         <div class="light-burst" aria-hidden="true"></div>
         <div class="logo-plate">
           <img id="brandLogo" class="brand-logo" src="assets/nci-logo.jpg?v=2" alt="National College of Ireland logo"
-               onerror="this.hidden=true; document.getElementById('brandLogoFallback').hidden=false;" />
+              onerror="this.hidden=true; document.getElementById('brandLogoFallback').hidden=false;" />
           <svg id="brandLogoFallback" class="brand-logo" viewBox="0 0 64 64" aria-hidden="true" hidden>
             <defs>
               <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
@@ -62,22 +62,77 @@
 
   <main>
 
-    <!-- ===== Start screen ===== -->
     <section id="startScreen" class="screen fade-in hero-glow-wrap">
       <div class="light-burst" aria-hidden="true"></div>
       <div class="screen-content">
         <p class="tagline">Show the letter with your hand. Beat the clock. Learn ASL fingerspelling while you play.</p>
-        <div class="mode-badge">Classic Mode · 15 rounds</div>
-        <button id="startBtn" class="btn btn-primary">Start Game</button>
-        <p class="hint">Needs camera access. Works best in good lighting with your hand fully in frame.</p>
-      </div>
+        <div class="mode-badge" id="modeBadge">Choose a mode</div>
+        <div class="mode-select">
+          <button
+            id="lettersModeBtn"
+            class="mode-card"
+            type="button"
+          >
+            <span class="mode-icon">A</span>
+
+            <span class="mode-text">
+              <span class="mode-eyebrow">
+                QUICK PRACTICE
+              </span>
+
+              <span class="mode-title">
+                Letter Mode
+              </span>
+
+              <span class="mode-description">
+                Practice individual ASL letters
+                and improve recognition accuracy.
+              </span>
+
+              <span class="mode-meta">
+                15 rounds
+              </span>
+            </span>
+
+            <span class="mode-arrow">→</span>
+          </button>
+
+          <button
+            id="wordsModeBtn"
+            class="mode-card"
+            type="button"
+          >
+            <span class="mode-icon">ABC</span>
+
+            <span class="mode-text">
+              <span class="mode-eyebrow">
+                FULL CHALLENGE
+              </span>
+
+              <span class="mode-title">
+                Word Mode
+              </span>
+
+              <span class="mode-description">
+                Spell complete words one letter
+                at a time across five rounds.
+              </span>
+
+              <span class="mode-meta">
+                5 words
+              </span>
+            </span>
+
+            <span class="mode-arrow">→</span>
+          </button>
+        </div>
     </section>
 
-    <!-- ===== Game screen ===== -->
     <section id="gameScreen" class="screen fade-in" hidden>
-
+      <div class="end-actions">
+        <button id="backToMenuBtn" class="btn btn-secondary">Main Menu</button>
+      </div>
       <div class="game-grid">
-
         <div class="camera-pane">
           <div class="camera-wrap glass">
             <video id="video" playsinline autoplay muted hidden></video>
@@ -94,8 +149,9 @@
         </div>
 
         <div class="prompt-pane glass">
-          <div class="target-label">Sign this letter</div>
+          <div id="targetLabel" class="target-label">Sign this letter</div>
           <div id="targetLetter" class="target-letter">A</div>
+          <div id="wordProgress" class="word-progress" hidden></div>
 
           <div id="comboPopup" class="combo-popup"></div>
 
@@ -118,14 +174,11 @@
             </div>
           </div>
         </div>
-
       </div>
 
       <div class="mastery-row" id="masteryRow"></div>
-
     </section>
 
-    <!-- ===== Game over / detailed report screen ===== -->
     <section id="endScreen" class="screen fade-in" hidden>
       <h2>Session Complete!</h2>
       <div class="grade-badge" id="finalGrade">A</div>
@@ -156,12 +209,12 @@
       </div>
 
       <div class="end-actions">
+        <button id="backToMenuFromEndBtn" class="btn btn-secondary">Main Menu</button>
         <button id="playAgainBtn" class="btn btn-primary">Play Again</button>
         <button id="viewStatsFromEndBtn" class="btn btn-secondary">View Stats</button>
       </div>
     </section>
 
-    <!-- ===== Stats / profile screen ===== -->
     <section id="statsScreen" class="screen fade-in" hidden>
       <h2>Your Progress</h2>
       <div class="end-stats">
@@ -185,7 +238,6 @@
       </div>
     </section>
 
-    <!-- ===== Settings screen ===== -->
     <section id="settingsScreen" class="screen fade-in" hidden>
       <h2>Settings</h2>
 

@@ -1,3 +1,4 @@
+import { resetMotionDetector, updateMotionDetector, } from "./js/motionDetector.js";
 import { LETTERS, LETTER_CUES, ROUNDS_TOTAL, SEND_INTERVAL_MS, HISTORY_LEN, DIFFICULTIES, XP_CORRECT, XP_MISS, unlockedThemes, CORRECT_ADVANCE_DELAY_MS, MISS_ADVANCE_DELAY_MS } from "./js/config.js";
 import {
   loadProfile, saveProfile, getLevelInfo, addXp,
@@ -30,8 +31,9 @@ function showScreen(name) {
   document.getElementById("stats").hidden = name !== "game";
 }
 
-const startBtn = document.getElementById("startBtn");
 const playAgainBtn = document.getElementById("playAgainBtn");
+const backToMenuBtn = document.getElementById("backToMenuBtn");
+const backToMenuFromEndBtn = document.getElementById("backToMenuFromEndBtn");
 const viewStatsFromEndBtn = document.getElementById("viewStatsFromEndBtn");
 const backFromStatsBtn = document.getElementById("backFromStatsBtn");
 const backFromSettingsBtn = document.getElementById("backFromSettingsBtn");
@@ -39,6 +41,11 @@ const statsBtn = document.getElementById("statsBtn");
 const settingsBtn = document.getElementById("settingsBtn");
 const muteBtn = document.getElementById("muteBtn");
 const modeToggleBtn = document.getElementById("modeToggleBtn");
+const lettersModeBtn = document.getElementById("lettersModeBtn");
+const wordsModeBtn = document.getElementById("wordsModeBtn");
+const modeBadge = document.getElementById("modeBadge");
+const targetLabelEl = document.getElementById("targetLabel");
+const wordProgressEl = document.getElementById("wordProgress");
 
 const scoreVal = document.getElementById("scoreVal");
 const comboVal = document.getElementById("comboVal");
@@ -67,6 +74,7 @@ const xpFillEl = document.getElementById("xpFill");
 const timerCircleEl = document.getElementById("timerCircle");
 const timerTextEl = document.getElementById("timerText");
 const circularTimer = createCircularTimer(timerCircleEl, timerTextEl);
+const WORD_EXTRA_TIME_MS = 8000; 
 
 // ===== Profile / settings =====
 let profile = loadProfile();
@@ -77,6 +85,27 @@ function applyMode(mode) {
   const modeSelect = document.getElementById("modeSelect");
   if (modeSelect) modeSelect.value = mode;
 }
+function goToMainMenu() {
+  running = false;
+  roundActive = false;
+  holdMs = 0;
+  holdBar.style.width = "0%";
+  circularTimer.reset();
+  feedbackPanel.hidden = true;
+  predictedLetterEl.textContent = "—";
+  confidenceValEl.textContent = "";
+  wordProgressEl.hidden = true;
+  wordProgressEl.textContent = "";
+  currentWord = "";
+  currentWordTarget = "";
+  lastAcceptedLetter = null;
+  gameMode = null;
+  updateModeBadge(null);
+  showScreen("start");
+}
+
+backToMenuBtn?.addEventListener("click", goToMainMenu);
+backToMenuFromEndBtn?.addEventListener("click", goToMainMenu);
 
 function applySettingsToUI() {
   document.body.classList.toggle("colorblind", profile.settings.colorblind);
@@ -108,6 +137,18 @@ function renderLevelBadge() {
 
 function currentDifficulty() {
   return DIFFICULTIES[profile.settings.difficulty] || DIFFICULTIES.normal;
+}
+
+const LETTER_ROUNDS_TOTAL = ROUNDS_TOTAL;
+const WORD_ROUNDS_TOTAL = 5;
+
+function currentRoundsTotal() {
+  return gameMode === "words" ? WORD_ROUNDS_TOTAL : LETTER_ROUNDS_TOTAL;
+}
+
+function currentRoundTimeMs() {
+  const base = currentDifficulty().roundTimeMs;
+  return gameMode === "words" ? base + WORD_EXTRA_TIME_MS : base;
 }
 
 // ===== Settings screen wiring =====
@@ -185,7 +226,9 @@ connectWs((connected) => {
 });
 
 let letterReferences = null;
-loadReferences().then((refs) => (letterReferences = refs));
+loadReferences().then((refs) => {
+  letterReferences = refs;
+});
 
 // ===== Game state =====
 let handLandmarker = null;
@@ -196,6 +239,7 @@ let lastSentAt = 0;
 let lastConfidence = null;
 let lastUserVector = null;
 let lastHandLabel = null; // "left" | "right", matches ai_module's hand encoding
+let motionCompletedAt = null;
 
 let score = 0;
 const comboState = createComboState();
@@ -208,6 +252,8 @@ let roundActive = false;
 let correctCount = 0;
 let missCount = 0;
 let roundHadWrongPrediction = false;
+let lastLetterAcceptedAt = 0;
+const REPEATED_LETTER_DELAY_MS = 1000;
 let lastTickSecond = null;
 const mastered = new Set();
 const achievementsEarnedThisSession = [];
@@ -217,6 +263,94 @@ let fastestResponseMs = null;
 let fastestLetter = null;
 let xpAtGameStart = 0;
 
+let gameMode = null;
+const WORDS = {
+    easy: [
+        "cat", "dog", "hat", "pen", "cup",
+        "sun", "map", "fish", "book", "tree",
+        "ball", "milk", "shoe", "bird", "star"
+    ],
+
+    normal: [
+        "apple", "banana", "school", "orange", "friend",
+        "camera", "window", "teacher", "laptop", "garden",
+        "bottle", "rabbit", "pencil", "guitar", "library"
+    ],
+
+    hard: [
+        "elephant", "beautiful", "adventure", "technology",
+        "development", "communication", "environment",
+        "information", "responsibility", "university",
+        "recognition", "application", "performance",
+        "programming", "artificial"
+    ]
+};
+let currentWord = "";
+let currentWordTarget = "";
+let lastAcceptedLetter = null;
+let roundWords = [];
+let currentRound = 0;
+
+
+function getWordsForCurrentDifficulty() {
+  const difficulty = String(
+    profile.settings.difficulty || "easy"
+  ).toLowerCase();
+
+  return WORDS[difficulty] || WORDS.easy;
+}
+
+function prepareRoundWords() {
+  const availableWords = getWordsForCurrentDifficulty()
+    .map((word) => word.toUpperCase());
+
+  roundWords = [...availableWords]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, WORD_ROUNDS_TOTAL);
+}
+
+function pickNextWord() {
+  if (!roundWords.length) {
+    prepareRoundWords();
+  }
+
+  return roundWords[roundIndex] || roundWords[0];
+}
+
+
+function updateModeBadge(mode = null) {
+  if (mode === "letters") {
+    modeBadge.textContent = `Letter Mode · ${LETTER_ROUNDS_TOTAL} rounds`;
+  } else if (mode === "words") {
+    modeBadge.textContent = `Word Mode · ${WORD_ROUNDS_TOTAL} rounds`;
+  } else {
+    modeBadge.textContent = "Choose a mode";
+  }
+
+  lettersModeBtn?.classList.toggle(
+    "selected",
+    mode === "letters"
+  );
+
+  wordsModeBtn?.classList.toggle(
+    "selected",
+    mode === "words"
+  );
+}
+
+function displayCurrentLetter(letter) {
+  const targetLabel = document.getElementById("targetLabel");
+  const targetLetter = document.getElementById("targetLetter");
+  const wordProgress = document.getElementById("wordProgress");
+
+  targetLabel.textContent = "Sign this letter";
+
+  targetLetter.hidden = false;
+  wordProgress.hidden = true;
+
+  targetLetter.textContent = letter.toUpperCase();
+}
+
 function pickNextLetter() {
   let letter;
   do {
@@ -225,8 +359,13 @@ function pickNextLetter() {
   return letter;
 }
 
+
+
 function renderMasteryRow() {
   masteryRow.innerHTML = "";
+
+  if (gameMode !== "letters") return;
+
   for (const letter of LETTERS) {
     const tile = document.createElement("div");
     tile.className = "mastery-tile";
@@ -240,7 +379,8 @@ function renderMasteryRow() {
 function updateStatsUI() {
   scoreVal.textContent = String(score);
   comboVal.textContent = String(comboState.combo);
-  roundVal.textContent = `${Math.min(roundIndex, ROUNDS_TOTAL)}/${ROUNDS_TOTAL}`;
+  const totalRounds = currentRoundsTotal();
+  roundVal.textContent = `${Math.min(roundIndex, totalRounds)}/${totalRounds}`;
 }
 
 function showReferenceFor(letter) {
@@ -248,7 +388,9 @@ function showReferenceFor(letter) {
   referenceCue.textContent = LETTER_CUES[letter] || "";
   referenceImg.hidden = false;
   referenceImg.src = `assets/letters/${letter}.png`;
-  referenceImg.onerror = () => { referenceImg.hidden = true; };
+  referenceImg.onerror = () => {
+    referenceImg.hidden = true;
+  };
 }
 
 function runAchievementCheck(extra = {}) {
@@ -273,23 +415,137 @@ function runAchievementCheck(extra = {}) {
   }
 }
 
+function updateWordProgress() {
+  if (gameMode !== "words") {
+    wordProgressEl.hidden = true;
+    return;
+  }
+
+  const completed = currentWord
+    .split("")
+    .map((letter) => `<span class="word-letter completed">${letter}</span>`)
+    .join("");
+
+  const activeIndex = currentWord.length;
+
+  const remaining = currentWordTarget
+    .slice(activeIndex)
+    .split("")
+    .map((letter, index) => {
+      const className =
+        index === 0 ? "word-letter active" : "word-letter";
+
+      return `<span class="${className}">${letter}</span>`;
+    })
+    .join("");
+
+  wordProgressEl.innerHTML = completed + remaining;
+}
+
+function acceptWordLetter(letter) {
+  if (gameMode !== "words" || !roundActive) {
+    return;
+  }
+
+  const expectedLetter =
+    currentWordTarget[currentWord.length];
+
+  if (letter !== expectedLetter) {
+    return;
+  }
+
+  const now = performance.now();
+
+  // Prevent one held pose from being accepted repeatedly.
+  if (
+    lastAcceptedLetter === letter &&
+    now - lastLetterAcceptedAt < REPEATED_LETTER_DELAY_MS
+  ) {
+    return;
+  }
+
+  currentWord += letter;
+  lastAcceptedLetter = letter;
+  lastLetterAcceptedAt = now;
+
+  playCorrectSound();
+
+  holdMs = 0;
+  holdBar.style.width = "0%";
+
+  updateWordProgress();
+
+  // Whole word completed.
+  if (currentWord === currentWordTarget) {
+    holdBar.style.width = "100%";
+    endRound(true);
+    return;
+  }
+
+  // Move to the next expected letter.
+  currentTarget =
+    currentWordTarget[currentWord.length];
+
+  resetMotionDetector(currentTarget);
+  smoother.reset();
+
+  predictedLetterEl.textContent = "—";
+  confidenceValEl.textContent = "";
+}
+
 function startRound() {
-  currentTarget = pickNextLetter();
-  targetLetterEl.textContent = currentTarget;
   holdMs = 0;
   holdBar.style.width = "0%";
   roundStartTime = performance.now();
   roundActive = true;
   roundHadWrongPrediction = false;
   lastTickSecond = null;
+
   feedbackPanel.hidden = true;
   feedbackPanel.classList.remove("correct", "miss");
   referencePanel.hidden = true;
   coachingHintEl.textContent = "";
+
   smoother.reset();
   predictedLetterEl.textContent = "—";
   confidenceValEl.textContent = "";
   circularTimer.reset();
+
+  if (gameMode === "letters") {
+    currentTarget = pickNextLetter();
+
+    currentWord = "";
+    currentWordTarget = "";
+    lastAcceptedLetter = null;
+
+    targetLabelEl.textContent = "Sign this letter";
+    targetLetterEl.hidden = false;
+    targetLetterEl.textContent = currentTarget;
+
+    wordProgressEl.hidden = true;
+    wordProgressEl.textContent = "";
+
+    resetMotionDetector(currentTarget);
+  } else {
+    currentWord = "";
+    currentWordTarget = pickNextWord();
+
+    // The current target must be one letter, not the whole word.
+    currentTarget = currentWordTarget[0];
+
+    lastAcceptedLetter = null;
+    lastLetterAcceptedAt = 0;
+
+    targetLabelEl.textContent = "Spell this word";
+    targetLetterEl.hidden = false;
+    targetLetterEl.textContent = currentWordTarget;
+
+    wordProgressEl.hidden = false;
+    updateWordProgress();
+
+    resetMotionDetector(currentTarget);
+  }
+
   renderMasteryRow();
 }
 
@@ -310,45 +566,64 @@ function endRound(wasCorrect) {
     correctCount++;
     const pointsAwarded = Math.round(10 * multiplier);
     score += pointsAwarded;
-    mastered.add(currentTarget);
+
+    if (gameMode === "letters") {
+      mastered.add(currentTarget);
+      if (fastestResponseMs == null || responseMs < fastestResponseMs) {
+        fastestResponseMs = responseMs;
+        fastestLetter = currentTarget;
+      }
+    }
+
     sumResponseMs += responseMs;
     countResponses++;
-    if (fastestResponseMs == null || responseMs < fastestResponseMs) {
-      fastestResponseMs = responseMs;
-      fastestLetter = currentTarget;
-    }
 
     feedbackPanel.classList.add("correct");
     feedbackPanel.classList.remove("miss");
     feedbackTitle.textContent = `Correct! +${pointsAwarded} pts`;
     addXp(profile, XP_CORRECT * multiplier);
     maybeShowComboPopup(comboState, tier, comboState.combo);
-    playCorrectSound();
+    if (gameMode !== "words") {
+      playCorrectSound();
+    }
+
     burstConfetti();
     glowPulse(document.querySelector(".camera-wrap"));
   } else {
     missCount++;
     feedbackPanel.classList.add("miss");
     feedbackPanel.classList.remove("correct");
-    feedbackTitle.textContent = "Not quite — here's the correct handshape:";
-    showReferenceFor(currentTarget);
+
+    if (gameMode === "letters") {
+      feedbackTitle.textContent = "Not quite — here's the correct handshape:";
+      showReferenceFor(currentTarget);
+
+      const reference = letterReferences && lastHandLabel
+        ? letterReferences[currentTarget]?.[lastHandLabel]
+        : null;
+      if (reference && lastUserVector) {
+        const { hints, similarity } = coachFor(lastUserVector, reference);
+        coachingHintEl.textContent = hints.length ? hints[0] : "Keep practicing — you're close!";
+        poseSimilarityValEl.textContent += (poseSimilarityValEl.textContent ? " · " : "") + `Pose match: ${similarity}%`;
+      }
+    } else {
+      feedbackTitle.textContent = `Missed word: ${currentWordTarget}`;
+      coachingHintEl.textContent = "Try signing each letter clearly and steadily.";
+      referencePanel.hidden = true;
+    }
+
     addXp(profile, XP_MISS);
     playMissSound();
     document.querySelector(".camera-wrap").classList.add("shake");
     setTimeout(() => document.querySelector(".camera-wrap").classList.remove("shake"), 400);
-
-    const reference = letterReferences && lastHandLabel
-      ? letterReferences[currentTarget]?.[lastHandLabel]
-      : null;
-    if (reference && lastUserVector) {
-      const { hints, similarity } = coachFor(lastUserVector, reference);
-      coachingHintEl.textContent = hints.length ? hints[0] : "Keep practicing — you're close!";
-      poseSimilarityValEl.textContent += (poseSimilarityValEl.textContent ? " · " : "") + `Pose match: ${similarity}%`;
-    }
   }
 
   recordCombo(profile, comboState.combo);
-  recordRoundResult(profile, { letter: currentTarget, correct: wasCorrect, responseMs });
+
+  if (gameMode === "letters") {
+    recordRoundResult(profile, { letter: currentTarget, correct: wasCorrect, responseMs });
+  }
+
   runAchievementCheck({ lastResponseMs: responseMs, lastRoundWasCorrect: wasCorrect });
   saveProfile(profile);
   renderLevelBadge();
@@ -356,7 +631,7 @@ function endRound(wasCorrect) {
   renderMasteryRow();
 
   const advanceDelay = wasCorrect ? CORRECT_ADVANCE_DELAY_MS : MISS_ADVANCE_DELAY_MS;
-  if (roundIndex >= ROUNDS_TOTAL) {
+  if (roundIndex >= currentRoundsTotal()) {
     setTimeout(showEndScreen, advanceDelay);
   } else {
     setTimeout(startRound, advanceDelay);
@@ -401,6 +676,14 @@ function resetGameState() {
   fastestResponseMs = null;
   fastestLetter = null;
   xpAtGameStart = profile.xpTotal;
+  currentWord = "";
+  currentWordTarget = "";
+  lastAcceptedLetter = null;
+  roundWords = [];
+
+    if (gameMode === "words") {
+      prepareRoundWords();
+    }
 }
 
 // ===== Camera + detection loop =====
@@ -419,16 +702,36 @@ function detectLoop() {
     drawSkeleton(overlayCtx, landmarks, overlay.width, overlay.height);
 
     const now = performance.now();
+    const motionPrediction = updateMotionDetector(
+      landmarks,
+      currentTarget,
+      now
+    );
+
+    const isMotionTarget =
+      currentTarget === "J" || currentTarget === "Z";
+
+    if (
+      isMotionTarget &&
+      motionPrediction === currentTarget
+    ) {
+      console.log("Motion letter completed:", motionPrediction);
+
+      // Instantly complete the progress bar
+      holdBar.style.width = "100%";
+
+      if (gameMode === "words") {
+      acceptWordLetter(motionPrediction);
+      } else {
+        endRound(true);
+      }
+  }
     if (!sendInFlight && now - lastSentAt >= SEND_INTERVAL_MS) {
       lastSentAt = now;
       sendInFlight = true;
       const features = normalizeLandmarks(landmarks);
       lastUserVector = features;
 
-      // Model input is [hand, ...63 landmarks] -- hand is 0=left/1=right,
-      // matching ai_module/training/train_model.py's df["hand"].map({"left":0,"right":1}).
-      // detectHands() already runs on the flipped canvas (mirroring cv2.flip in the
-      // training pipeline), so this handedness reads the same way Python's did.
       const handednessLabel = result.handedness?.[0]?.[0]?.categoryName;
       lastHandLabel = handednessLabel ? handednessLabel.toLowerCase() : null;
       const handValue = lastHandLabel === "right" ? 1 : 0;
@@ -446,15 +749,32 @@ function detectLoop() {
     noHandBanner.hidden = false;
   }
 
-  const smoothed = smoother.smoothed();
-  predictedLetterEl.textContent = smoothed || "—";
-  confidenceValEl.textContent = smoothed && lastConfidence != null ? `${Math.round(lastConfidence * 100)}%` : "";
+  const staticPrediction = smoother.smoothed();
+
+  const isMotionTarget =
+    currentTarget === "J" || currentTarget === "Z";
+
+  // J and Z are handled immediately above when their
+  // complete movement is detected.
+  const finalPrediction =
+    isMotionTarget ? null : staticPrediction;
+
+  predictedLetterEl.textContent =
+  finalPrediction || "—";
+
+  confidenceValEl.textContent =
+    !isMotionTarget &&
+    finalPrediction &&
+    lastConfidence != null
+      ? `${Math.round(lastConfidence * 100)}%`
+      : "";
 
   if (roundActive) {
     const diff = currentDifficulty();
+    const roundTimeMs = currentRoundTimeMs();
     const elapsed = performance.now() - roundStartTime;
-    const remainingMs = Math.max(0, diff.roundTimeMs - elapsed);
-    circularTimer.update(remainingMs, diff.roundTimeMs);
+    const remainingMs = Math.max(0, roundTimeMs - elapsed);
+    circularTimer.update(remainingMs, roundTimeMs);
 
     const remainingSec = Math.ceil(remainingMs / 1000);
     if (remainingMs <= 3000 && remainingMs > 0 && remainingSec !== lastTickSecond) {
@@ -462,19 +782,56 @@ function detectLoop() {
       playTick();
     }
 
-    if (smoothed && smoothed === currentTarget) {
-      holdMs += 1000 / 30; // approx per-frame delta at ~30fps detection loop
-      holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+    if (
+      finalPrediction &&
+      finalPrediction === currentTarget
+    ) {
+
+      holdMs += 1000 / 30;
+
+      holdBar.style.width =
+        `${Math.min(
+          100,
+          (holdMs / diff.holdMs) * 100
+        )}%`;
+
       if (holdMs >= diff.holdMs) {
-        endRound(true);
+
+        if (gameMode === "words") {
+
+          acceptWordLetter(finalPrediction);
+
+        } else {
+
+          endRound(true);
+
+        }
+
       }
+
     } else {
-      if (smoothed && smoothed !== currentTarget) roundHadWrongPrediction = true;
-      holdMs = Math.max(0, holdMs - 1000 / 15);
-      holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+
+      if (
+        finalPrediction &&
+        finalPrediction !== currentTarget
+      ) {
+        roundHadWrongPrediction = true;
+      }
+
+      holdMs = Math.max(
+        0,
+        holdMs - 1000 / 15
+      );
+
+      holdBar.style.width =
+        `${Math.min(
+          100,
+          (holdMs / diff.holdMs) * 100
+        )}%`;
+
     }
 
-    if (elapsed >= diff.roundTimeMs) {
+    if (elapsed >= roundTimeMs) {
       endRound(false);
     }
   }
@@ -484,9 +841,10 @@ function detectLoop() {
 
 // ===== Flow control =====
 async function startGame() {
+  if (!gameMode) return;
+
   ensureAudio();
-  startBtn.disabled = true;
-  startBtn.textContent = "Loading…";
+
   try {
     if (!handLandmarker) handLandmarker = await setupHandLandmarker();
     if (!stream) {
@@ -496,8 +854,6 @@ async function startGame() {
     }
   } catch (err) {
     alert("Camera or model failed to load: " + err.message);
-    startBtn.disabled = false;
-    startBtn.textContent = "Start Game";
     return;
   }
 
@@ -509,13 +865,22 @@ async function startGame() {
   running = true;
   startRound();
   requestAnimationFrame(detectLoop);
-
-  startBtn.disabled = false;
-  startBtn.textContent = "Start Game";
 }
 
-startBtn.addEventListener("click", startGame);
+lettersModeBtn?.addEventListener("click", async () => {
+  gameMode = "letters";
+  updateModeBadge(gameMode);
+  await startGame();
+});
+
+wordsModeBtn?.addEventListener("click", async () => {
+  gameMode = "words";
+  updateModeBadge(gameMode);
+  await startGame();
+});
+
 playAgainBtn.addEventListener("click", startGame);
 
+updateModeBadge(null);
 applySettingsToUI();
 renderLevelBadge();
