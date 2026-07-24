@@ -1,3 +1,4 @@
+import { resetMotionDetector, updateMotionDetector, } from "./js/motionDetector.js";
 import { LETTERS, LETTER_CUES, ROUNDS_TOTAL, SEND_INTERVAL_MS, HISTORY_LEN, DIFFICULTIES, XP_CORRECT, XP_MISS, unlockedThemes, CORRECT_ADVANCE_DELAY_MS, MISS_ADVANCE_DELAY_MS } from "./js/config.js";
 import {
   loadProfile, saveProfile, getLevelInfo, addXp,
@@ -196,6 +197,7 @@ let lastSentAt = 0;
 let lastConfidence = null;
 let lastUserVector = null;
 let lastHandLabel = null; // "left" | "right", matches ai_module's hand encoding
+let motionCompletedAt = null;
 
 let score = 0;
 const comboState = createComboState();
@@ -275,6 +277,8 @@ function runAchievementCheck(extra = {}) {
 
 function startRound() {
   currentTarget = pickNextLetter();
+  resetMotionDetector(currentTarget);
+
   targetLetterEl.textContent = currentTarget;
   holdMs = 0;
   holdBar.style.width = "0%";
@@ -419,6 +423,28 @@ function detectLoop() {
     drawSkeleton(overlayCtx, landmarks, overlay.width, overlay.height);
 
     const now = performance.now();
+    const motionPrediction = updateMotionDetector(
+      landmarks,
+      currentTarget,
+      now
+    );
+
+    const isMotionTarget =
+      currentTarget === "J" || currentTarget === "Z";
+
+    if (
+      isMotionTarget &&
+      motionPrediction === currentTarget
+    ) {
+      console.log("Motion letter completed:", motionPrediction);
+
+      // Instantly complete the progress bar
+      holdBar.style.width = "100%";
+
+      // J/Z movements are already complete,
+      // so they do not need the static-letter hold timer.
+      endRound(true);
+    }
     if (!sendInFlight && now - lastSentAt >= SEND_INTERVAL_MS) {
       lastSentAt = now;
       sendInFlight = true;
@@ -446,9 +472,25 @@ function detectLoop() {
     noHandBanner.hidden = false;
   }
 
-  const smoothed = smoother.smoothed();
-  predictedLetterEl.textContent = smoothed || "—";
-  confidenceValEl.textContent = smoothed && lastConfidence != null ? `${Math.round(lastConfidence * 100)}%` : "";
+  const staticPrediction = smoother.smoothed();
+
+  const isMotionTarget =
+    currentTarget === "J" || currentTarget === "Z";
+
+  // J and Z are handled immediately above when their
+  // complete movement is detected.
+  const finalPrediction =
+    isMotionTarget ? null : staticPrediction;
+
+  predictedLetterEl.textContent =
+  finalPrediction || "—";
+
+  confidenceValEl.textContent =
+    !isMotionTarget &&
+    finalPrediction &&
+    lastConfidence != null
+      ? `${Math.round(lastConfidence * 100)}%`
+      : "";
 
   if (roundActive) {
     const diff = currentDifficulty();
@@ -462,14 +504,37 @@ function detectLoop() {
       playTick();
     }
 
-    if (smoothed && smoothed === currentTarget) {
-      holdMs += 1000 / 30; // approx per-frame delta at ~30fps detection loop
-      holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+    if (
+      finalPrediction &&
+      finalPrediction === currentTarget
+    ) {
+      const isMotionTarget =
+        currentTarget === "J" || currentTarget === "Z";
+
+      if (
+        isMotionTarget &&
+        motionPrediction === currentTarget
+      ) {
+        holdBar.style.width = "100%";
+        endRound(true);
+      }
+
+      // Existing behaviour for static letters
+      holdMs += 1000 / 30;
+
+      holdBar.style.width =
+        `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
+
       if (holdMs >= diff.holdMs) {
         endRound(true);
       }
-    } else {
-      if (smoothed && smoothed !== currentTarget) roundHadWrongPrediction = true;
+    }else {
+      if (
+        finalPrediction &&
+        finalPrediction !== currentTarget
+      ) {
+        roundHadWrongPrediction = true;
+      }
       holdMs = Math.max(0, holdMs - 1000 / 15);
       holdBar.style.width = `${Math.min(100, (holdMs / diff.holdMs) * 100)}%`;
     }
