@@ -370,12 +370,6 @@ body[data-mode="light"] .light-burst::before { opacity: 0.55; }
 }
 .btn-secondary:hover { background: var(--bg-3); }
 
-.mode-select .selected {
-  outline: 2px solid #fff;
-  transform: scale(1.03);
-  box-shadow: 0 0 18px rgba(255,255,255,0.25);
-}
-
 button:disabled {
   opacity: 0.65;
   cursor: not-allowed;
@@ -435,11 +429,11 @@ button:disabled {
   min-height: 130px;
   padding: 24px;
 
-  border: 2px solid rgba(255, 255, 255, 0.15);
+  border: 2px solid var(--card-border);
   border-radius: 20px;
 
-  background: rgba(255, 255, 255, 0.08);
-  color: inherit;
+  background: var(--card);
+  color: var(--text);
   text-align: left;
   cursor: pointer;
 
@@ -452,9 +446,9 @@ button:disabled {
 
 .mode-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.13);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+  border-color: var(--accent);
+  background: var(--bg-3);
+  box-shadow: var(--shadow-soft);
 }
 
 .mode-card:active {
@@ -462,9 +456,9 @@ button:disabled {
 }
 
 .mode-card.selected {
-  border-color: #7c5cff;
-  background: rgba(124, 92, 255, 0.18);
-  box-shadow: 0 0 0 4px rgba(124, 92, 255, 0.12);
+  border-color: var(--accent);
+  background: var(--bg-3);
+  box-shadow: 0 0 0 3px var(--accent) inset, var(--shadow-soft);
 }
 
 .mode-icon {
@@ -592,6 +586,23 @@ button:disabled {
   line-height: 1;
   margin: 6px 0 10px;
   color: var(--accent);
+}
+
+/* Word Mode shows a whole word here instead of one letter -- the fixed
+   7rem size above is sized for a single character and overflows badly
+   on longer words, so it gets a responsive, much smaller size instead. */
+.target-letter.word-target {
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  letter-spacing: 0.06em;
+  word-break: break-word;
+}
+
+.word-progress {
+  margin: 4px 0 10px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--accent-2);
 }
 
 .combo-popup {

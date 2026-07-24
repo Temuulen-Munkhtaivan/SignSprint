@@ -435,6 +435,7 @@ function startRound() {
     currentWordTarget = "";
     lastAcceptedLetter = null;
     targetLabelEl.textContent = "Sign this letter";
+    targetLetterEl.classList.remove("word-target");
     targetLetterEl.textContent = currentTarget;
     wordProgressEl.hidden = true;
     wordProgressEl.textContent = "";
@@ -447,6 +448,7 @@ function startRound() {
 
     targetLabelEl.textContent = "Sign this word";
     targetLetterEl.hidden = false;
+    targetLetterEl.classList.add("word-target");
     targetLetterEl.textContent = currentWordTarget;
 
     wordProgressEl.hidden = false;
@@ -617,7 +619,7 @@ function detectLoop() {
       const handValue = lastHandLabel === "right" ? 1 : 0;
       const payload = [handValue, ...features];
 
-      requestPrediction(payload).then((resp) => {
+      requestPrediction(payload, gameMode === "words" ? "words" : "letters").then((resp) => {
         sendInFlight = false;
         if (resp && resp.letter) {
           lastConfidence = resp.confidence;

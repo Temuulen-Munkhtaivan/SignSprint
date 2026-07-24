@@ -23,11 +23,11 @@ export function connectWs(onStatusChange) {
   };
 }
 
-export function requestPrediction(landmarks) {
+export function requestPrediction(landmarks, mode = "letters") {
   if (!wsReady) return Promise.resolve(null);
   return new Promise((resolve) => {
     pendingResolve = resolve;
-    ws.send(JSON.stringify({ landmarks }));
+    ws.send(JSON.stringify({ landmarks, mode }));
   });
 }
 
