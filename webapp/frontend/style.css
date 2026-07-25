@@ -314,7 +314,7 @@ body[data-mode="light"] .light-burst::before { opacity: 0.55; }
   padding: 28px;
 }
 
-#startScreen, #endScreen, #statsScreen, #settingsScreen {
+#startScreen, #endScreen, #statsScreen, #settingsScreen, #learnCompleteScreen {
   text-align: center;
   max-width: 760px;
   margin: 24px auto;
@@ -659,6 +659,12 @@ button:disabled {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
+/* Learn Mode has no timer -- there's nothing to count down. */
+#gameScreen.learn-active .circular-timer,
+#gameScreen.learn-active .timer-text {
+  display: none;
+}
+
 .hold-track {
   margin-top: 10px;
   height: 8px;
@@ -798,13 +804,52 @@ button:disabled {
   margin-bottom: 8px;
 }
 
+.reference-visuals {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
 .reference-panel img {
   max-width: 140px;
   border-radius: 10px;
   border: 1px solid var(--card-border);
-  margin-bottom: 8px;
+}
+
+/* Skeleton diagram of the target handshape, drawn from real training-data
+   landmark positions -- the primary teaching visual until real reference
+   photos exist in assets/letters/. */
+.ghost-hand-canvas {
+  width: 130px;
+  height: 130px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
 }
 .reference-cue { color: var(--text-dim); font-size: 0.9rem; margin: 0; }
+
+/* ===== Learn Mode navigation ===== */
+.learn-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.learn-controls .btn {
+  padding: 10px 22px;
+  font-size: 0.9rem;
+}
+.learn-progress-label {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 120px;
+  text-align: center;
+}
 
 /* ===== Mastery tracker ===== */
 .mastery-row {

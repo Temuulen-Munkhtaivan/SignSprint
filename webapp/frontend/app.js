@@ -2,14 +2,14 @@ import { resetMotionDetector, updateMotionDetector, } from "./js/motionDetector.
 import { LETTERS, LETTER_CUES, ROUNDS_TOTAL, SEND_INTERVAL_MS, HISTORY_LEN, DIFFICULTIES, XP_CORRECT, XP_MISS, unlockedThemes, CORRECT_ADVANCE_DELAY_MS, MISS_ADVANCE_DELAY_MS } from "./js/config.js";
 import {
   loadProfile, saveProfile, getLevelInfo, addXp,
-  recordRoundResult, recordCombo, recordGameEnd,
+  recordRoundResult, recordCombo, recordGameEnd, markLetterMastered,
 } from "./js/profile.js";
 import { checkAchievements, showAchievementToasts } from "./js/achievements.js";
 import { createComboState, registerCorrect, registerMiss, maybeShowComboPopup } from "./js/combo.js";
 import { ensureAudio, setVolume, setMuted, playCorrectSound, playMissSound, playTick } from "./js/audio.js";
 import { burstConfetti, glowPulse } from "./js/confetti.js";
 import {
-  setupHandLandmarker, setupCamera, getFlippedFrame, detectHands, drawSkeleton, normalizeLandmarks,
+  setupHandLandmarker, setupCamera, getFlippedFrame, detectHands, drawSkeleton, normalizeLandmarks, drawGhostHand,
 } from "./js/handTracking.js";
 import { connectWs, requestPrediction, createSmoother } from "./js/websocketClient.js";
 import { loadReferences, coachFor } from "./js/coaching.js";
@@ -23,6 +23,7 @@ const screens = {
   end: document.getElementById("endScreen"),
   stats: document.getElementById("statsScreen"),
   settings: document.getElementById("settingsScreen"),
+  learnComplete: document.getElementById("learnCompleteScreen"),
 };
 let previousScreen = "start";
 
@@ -43,9 +44,16 @@ const muteBtn = document.getElementById("muteBtn");
 const modeToggleBtn = document.getElementById("modeToggleBtn");
 const lettersModeBtn = document.getElementById("lettersModeBtn");
 const wordsModeBtn = document.getElementById("wordsModeBtn");
+const learnModeBtn = document.getElementById("learnModeBtn");
 const modeBadge = document.getElementById("modeBadge");
 const targetLabelEl = document.getElementById("targetLabel");
 const wordProgressEl = document.getElementById("wordProgress");
+const learnControls = document.getElementById("learnControls");
+const learnPrevBtn = document.getElementById("learnPrevBtn");
+const learnSkipBtn = document.getElementById("learnSkipBtn");
+const learnProgressLabel = document.getElementById("learnProgressLabel");
+const learnCompleteToLettersBtn = document.getElementById("learnCompleteToLettersBtn");
+const learnCompleteToMenuBtn = document.getElementById("learnCompleteToMenuBtn");
 
 const scoreVal = document.getElementById("scoreVal");
 const comboVal = document.getElementById("comboVal");
@@ -66,6 +74,7 @@ const coachingHintEl = document.getElementById("coachingHint");
 const referencePanel = document.getElementById("referencePanel");
 const referenceImg = document.getElementById("referenceImg");
 const referenceCue = document.getElementById("referenceCue");
+const ghostHandCanvas = document.getElementById("ghostHandCanvas");
 const masteryRow = document.getElementById("masteryRow");
 const connectionBanner = document.getElementById("connectionBanner");
 const levelNumEl = document.getElementById("levelNum");
@@ -99,6 +108,8 @@ function goToMainMenu() {
   currentWord = "";
   currentWordTarget = "";
   lastAcceptedLetter = null;
+  learnControls.hidden = true;
+  learnIndex = 0;
   gameMode = null;
   updateModeBadge(null);
   showScreen("start");
@@ -264,6 +275,7 @@ let fastestLetter = null;
 let xpAtGameStart = 0;
 
 let gameMode = null;
+let learnIndex = 0;
 const WORDS = {
     easy: [
         "cat", "dog", "hat", "pen", "cup",
@@ -323,6 +335,8 @@ function updateModeBadge(mode = null) {
     modeBadge.textContent = `Letter Mode · ${LETTER_ROUNDS_TOTAL} rounds`;
   } else if (mode === "words") {
     modeBadge.textContent = `Word Mode · ${WORD_ROUNDS_TOTAL} rounds`;
+  } else if (mode === "learn") {
+    modeBadge.textContent = `Learn Mode · ${LETTERS.length} letters`;
   } else {
     modeBadge.textContent = "Choose a mode";
   }
@@ -335,6 +349,11 @@ function updateModeBadge(mode = null) {
   wordsModeBtn?.classList.toggle(
     "selected",
     mode === "words"
+  );
+
+  learnModeBtn?.classList.toggle(
+    "selected",
+    mode === "learn"
   );
 }
 
@@ -364,7 +383,7 @@ function pickNextLetter() {
 function renderMasteryRow() {
   masteryRow.innerHTML = "";
 
-  if (gameMode !== "letters") return;
+  if (gameMode === "words") return;
 
   for (const letter of LETTERS) {
     const tile = document.createElement("div");
@@ -377,10 +396,21 @@ function renderMasteryRow() {
 }
 
 function updateStatsUI() {
+  const isLearn = gameMode === "learn";
+  const scoreStat = scoreVal.closest(".stat");
+  const comboStat = comboVal.closest(".stat");
+  if (scoreStat) scoreStat.hidden = isLearn;
+  if (comboStat) comboStat.hidden = isLearn;
+
   scoreVal.textContent = String(score);
   comboVal.textContent = String(comboState.combo);
-  const totalRounds = currentRoundsTotal();
-  roundVal.textContent = `${Math.min(roundIndex, totalRounds)}/${totalRounds}`;
+
+  if (isLearn) {
+    roundVal.textContent = `${Math.min(learnIndex + 1, LETTERS.length)}/${LETTERS.length}`;
+  } else {
+    const totalRounds = currentRoundsTotal();
+    roundVal.textContent = `${Math.min(roundIndex, totalRounds)}/${totalRounds}`;
+  }
 }
 
 function showReferenceFor(letter) {
@@ -391,6 +421,13 @@ function showReferenceFor(letter) {
   referenceImg.onerror = () => {
     referenceImg.hidden = true;
   };
+
+  // Visual handshape diagram derived from the real training data (mean
+  // landmark positions per letter+hand) -- this is the primary teaching
+  // visual until real reference photos are added to assets/letters/.
+  const handForDiagram = lastHandLabel || "right";
+  const referenceVector = letterReferences?.[letter]?.[handForDiagram];
+  drawGhostHand(ghostHandCanvas, referenceVector);
 }
 
 function runAchievementCheck(extra = {}) {
@@ -493,6 +530,53 @@ function acceptWordLetter(letter) {
   confidenceValEl.textContent = "";
 }
 
+// Learn Mode never times out and never "misses" -- this is its only
+// success path, kept separate from endRound() since none of the
+// scoring/combo/XP/session-report logic there applies to untimed practice.
+function completeLearnLetter() {
+  if (!roundActive) return;
+  roundActive = false;
+
+  holdBar.style.width = "100%";
+
+  markLetterMastered(profile, currentTarget);
+  mastered.add(currentTarget);
+  saveProfile(profile);
+  renderLevelBadge();
+  renderMasteryRow();
+
+  runAchievementCheck({ lastRoundWasCorrect: true });
+
+  feedbackPanel.hidden = false;
+  feedbackPanel.classList.add("correct");
+  feedbackPanel.classList.remove("miss");
+  feedbackTitle.textContent = "Nice! You've got it ✅";
+  responseTimeValEl.textContent = "";
+  poseSimilarityValEl.textContent = "";
+  coachingHintEl.textContent = "";
+
+  playCorrectSound();
+  burstConfetti();
+  glowPulse(document.querySelector(".camera-wrap"));
+
+  setTimeout(() => advanceLearnMode(1), CORRECT_ADVANCE_DELAY_MS);
+}
+
+function showLearnCompleteScreen() {
+  running = false;
+  roundActive = false;
+  showScreen("learnComplete");
+}
+
+function advanceLearnMode(direction) {
+  if (direction > 0 && learnIndex >= LETTERS.length - 1) {
+    showLearnCompleteScreen();
+    return;
+  }
+  learnIndex = Math.min(LETTERS.length - 1, Math.max(0, learnIndex + direction));
+  startRound();
+}
+
 function startRound() {
   holdMs = 0;
   holdBar.style.width = "0%";
@@ -510,6 +594,8 @@ function startRound() {
   predictedLetterEl.textContent = "—";
   confidenceValEl.textContent = "";
   circularTimer.reset();
+  learnControls.hidden = true;
+  document.getElementById("gameScreen").classList.toggle("learn-active", gameMode === "learn");
 
   if (gameMode === "letters") {
     currentTarget = pickNextLetter();
@@ -525,6 +611,30 @@ function startRound() {
 
     wordProgressEl.hidden = true;
     wordProgressEl.textContent = "";
+
+    resetMotionDetector(currentTarget);
+  } else if (gameMode === "learn") {
+    currentTarget = LETTERS[learnIndex];
+
+    currentWord = "";
+    currentWordTarget = "";
+    lastAcceptedLetter = null;
+
+    targetLabelEl.textContent = "Sign this letter";
+    targetLetterEl.classList.remove("word-target");
+    targetLetterEl.hidden = false;
+    targetLetterEl.textContent = currentTarget;
+
+    wordProgressEl.hidden = true;
+    wordProgressEl.textContent = "";
+
+    learnControls.hidden = false;
+    learnPrevBtn.disabled = learnIndex === 0;
+    learnProgressLabel.textContent = `Letter ${learnIndex + 1} of ${LETTERS.length}`;
+
+    // Learn Mode teaches before testing: show the reference immediately
+    // instead of only revealing it after a miss.
+    showReferenceFor(currentTarget);
 
     resetMotionDetector(currentTarget);
   } else {
@@ -724,6 +834,8 @@ function detectLoop() {
 
       if (gameMode === "words") {
       acceptWordLetter(motionPrediction);
+      } else if (gameMode === "learn") {
+        completeLearnLetter();
       } else {
         endRound(true);
       }
@@ -779,7 +891,7 @@ function detectLoop() {
     circularTimer.update(remainingMs, roundTimeMs);
 
     const remainingSec = Math.ceil(remainingMs / 1000);
-    if (remainingMs <= 3000 && remainingMs > 0 && remainingSec !== lastTickSecond) {
+    if (remainingMs <= 3000 && remainingMs > 0 && remainingSec !== lastTickSecond && gameMode !== "learn") {
       lastTickSecond = remainingSec;
       playTick();
     }
@@ -802,6 +914,10 @@ function detectLoop() {
         if (gameMode === "words") {
 
           acceptWordLetter(finalPrediction);
+
+        } else if (gameMode === "learn") {
+
+          completeLearnLetter();
 
         } else {
 
@@ -833,7 +949,7 @@ function detectLoop() {
 
     }
 
-    if (elapsed >= roundTimeMs) {
+    if (elapsed >= roundTimeMs && gameMode !== "learn") {
       endRound(false);
     }
   }
@@ -877,6 +993,22 @@ lettersModeBtn?.addEventListener("click", async () => {
 
 wordsModeBtn?.addEventListener("click", async () => {
   gameMode = "words";
+  updateModeBadge(gameMode);
+  await startGame();
+});
+
+learnModeBtn?.addEventListener("click", async () => {
+  gameMode = "learn";
+  learnIndex = 0;
+  updateModeBadge(gameMode);
+  await startGame();
+});
+
+learnPrevBtn?.addEventListener("click", () => advanceLearnMode(-1));
+learnSkipBtn?.addEventListener("click", () => advanceLearnMode(1));
+learnCompleteToMenuBtn?.addEventListener("click", goToMainMenu);
+learnCompleteToLettersBtn?.addEventListener("click", async () => {
+  gameMode = "letters";
   updateModeBadge(gameMode);
   await startGame();
 });

@@ -98,6 +98,19 @@ export function recordRoundResult(profile, { letter, correct, responseMs }) {
   s.perLetter[letter] = letterStats;
 }
 
+/**
+ * Learn Mode's equivalent of recordRoundResult -- marks a letter as mastered
+ * without touching lifetime attempts/accuracy/response-time stats, since
+ * Learn Mode is untimed practice, not a performance measurement. Still
+ * updates masteredAllTime so it counts toward the Alphabet Master achievement
+ * and the shared mastery grid.
+ */
+export function markLetterMastered(profile, letter) {
+  if (!profile.stats.masteredAllTime.includes(letter)) {
+    profile.stats.masteredAllTime.push(letter);
+  }
+}
+
 export function recordCombo(profile, combo) {
   profile.stats.bestCombo = Math.max(profile.stats.bestCombo, combo);
 }
