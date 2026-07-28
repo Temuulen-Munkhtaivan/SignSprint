@@ -1,5 +1,6 @@
 # Virtual Environment
 venv/
+.venv/
 
 # Python cache
 __pycache__/
@@ -7,4 +8,7 @@ __pycache__/
 
 # VS Code settings
 .vscode/
+
+# macOS
+.DS_Store
 
