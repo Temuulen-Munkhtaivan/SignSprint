@@ -1054,3 +1054,41 @@ button:disabled {
   .end-stats { gap: 14px; }
   .target-letter { font-size: 5rem; }
 }
+
+/* ===== Learn Mode Instructions ===== */
+
+.learn-how-to {
+  width: min(100%, 430px);
+  margin: 18px auto 8px;
+  padding: 16px 18px;
+  border: 1px solid rgba(90, 150, 255, 0.3);
+  border-radius: 16px;
+  background: rgba(90, 150, 255, 0.09);
+  text-align: left;
+}
+
+.learn-how-to-title {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--accent, #79aaff);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.learn-how-to p {
+  margin: 0;
+  color: var(--text-primary, #ffffff);
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.learn-how-to strong {
+  color: var(--accent, #79aaff);
+}
+
+.learn-incomplete-message {
+  color: #ffbf47;
+  font-weight: 700;
+}

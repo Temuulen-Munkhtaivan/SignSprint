@@ -49,6 +49,8 @@ const modeBadge = document.getElementById("modeBadge");
 const targetLabelEl = document.getElementById("targetLabel");
 const wordProgressEl = document.getElementById("wordProgress");
 const learnControls = document.getElementById("learnControls");
+const learnHowTo = document.getElementById("learnHowTo");
+const learnHowToText = document.getElementById("learnHowToText");
 const learnPrevBtn = document.getElementById("learnPrevBtn");
 const learnSkipBtn = document.getElementById("learnSkipBtn");
 const learnProgressLabel = document.getElementById("learnProgressLabel");
@@ -112,6 +114,9 @@ function goToMainMenu() {
   learnIndex = 0;
   gameMode = null;
   updateModeBadge(null);
+  completedLearnLetters.clear();
+  learnHowTo.hidden = true;
+  learnHowToText.textContent = "";
   showScreen("start");
 }
 
@@ -276,6 +281,54 @@ let xpAtGameStart = 0;
 
 let gameMode = null;
 let learnIndex = 0;
+// Letters the user has successfully demonstrated during this Learn Mode session.
+const completedLearnLetters = new Set();
+const LEARN_INSTRUCTIONS = {
+  A: "Make a fist with your thumb resting against the side of your index finger.",
+  B: "Hold all four fingers straight together and fold your thumb across your palm.",
+  C: "Curve your fingers and thumb to form the shape of the letter C.",
+  D: "Touch your thumb to your middle finger while keeping your index finger pointing upward.",
+  E: "Curl all four fingers downward and tuck your thumb underneath them.",
+  F: "Touch your thumb and index finger together. Keep the other three fingers raised.",
+  G: "Point your index finger and thumb sideways, keeping them parallel.",
+  H: "Extend your index and middle fingers together sideways.",
+  I: "Make a fist and raise only your little finger.",
+  J: "Start with the sign for I, then draw a J shape in the air using your little finger.",
+  K: "Raise your index and middle fingers. Place your thumb between them.",
+  L: "Extend your thumb and index finger to form an L shape.",
+  M: "Place your thumb underneath your first three fingers.",
+  N: "Place your thumb underneath your index and middle fingers.",
+  O: "Curve all fingers and your thumb together to create an O shape.",
+  P: "Use the K handshape, then point it downward.",
+  Q: "Use the G handshape, then point it downward.",
+  R: "Cross your index and middle fingers while keeping the other fingers folded.",
+  S: "Make a fist with your thumb folded across the front of your fingers.",
+  T: "Make a fist with your thumb placed between your index and middle fingers.",
+  U: "Raise your index and middle fingers together, keeping them straight.",
+  V: "Raise your index and middle fingers apart to form a V.",
+  W: "Raise your index, middle and ring fingers while keeping the others folded.",
+  X: "Raise your index finger and bend it into a hook shape.",
+  Y: "Extend your thumb and little finger while keeping the middle fingers folded.",
+  Z: "Use your index finger to draw a Z shape in the air."
+};
+
+function showLearnInstructions(letter) {
+  if (gameMode !== "learn") {
+    learnHowTo.hidden = true;
+    learnHowToText.textContent = "";
+    return;
+  }
+
+  learnHowTo.hidden = false;
+
+  const instruction =
+    LEARN_INSTRUCTIONS[letter] ||
+    LETTER_CUES[letter] ||
+    "Copy the reference handshape and hold it steadily.";
+
+  learnHowToText.innerHTML =
+    `<strong>${letter}:</strong> ${instruction}`;
+}
 const WORDS = {
     easy: [
         "cat", "dog", "hat", "pen", "cup",
@@ -539,6 +592,8 @@ function completeLearnLetter() {
 
   holdBar.style.width = "100%";
 
+  completedLearnLetters.add(currentTarget);
+
   markLetterMastered(profile, currentTarget);
   mastered.add(currentTarget);
   saveProfile(profile);
@@ -568,13 +623,66 @@ function showLearnCompleteScreen() {
   showScreen("learnComplete");
 }
 
+function getFirstIncompleteLearnIndex() {
+  return LETTERS.findIndex(
+    (letter) => !completedLearnLetters.has(letter)
+  );
+}
+
 function advanceLearnMode(direction) {
-  if (direction > 0 && learnIndex >= LETTERS.length - 1) {
-    showLearnCompleteScreen();
+  const movingForward = direction > 0;
+  const atLastLetter = learnIndex >= LETTERS.length - 1;
+
+  if (movingForward && atLastLetter) {
+    const completedAllLetters =
+      completedLearnLetters.size === LETTERS.length;
+
+    if (completedAllLetters) {
+      showLearnCompleteScreen();
+      return;
+    }
+
+    // Z was reached, but one or more letters were skipped.
+    const firstIncompleteIndex = getFirstIncompleteLearnIndex();
+
+    feedbackPanel.hidden = false;
+    feedbackPanel.classList.remove("correct", "miss");
+    feedbackTitle.textContent =
+      "You still have letters left to complete";
+
+    responseTimeValEl.textContent = "";
+    poseSimilarityValEl.textContent = "";
+
+    const remainingLetters = LETTERS.filter(
+      (letter) => !completedLearnLetters.has(letter)
+    );
+
+    coachingHintEl.innerHTML =
+      `Complete every letter before finishing Learn Mode. ` +
+      `Remaining: <span class="learn-incomplete-message">` +
+      `${remainingLetters.join(", ")}</span>`;
+
+    // Return to the first letter that was skipped.
+    setTimeout(() => {
+      learnIndex =
+        firstIncompleteIndex >= 0
+          ? firstIncompleteIndex
+          : 0;
+
+      startRound();
+      updateStatsUI();
+    }, 1600);
+
     return;
   }
-  learnIndex = Math.min(LETTERS.length - 1, Math.max(0, learnIndex + direction));
+
+  learnIndex = Math.min(
+    LETTERS.length - 1,
+    Math.max(0, learnIndex + direction)
+  );
+
   startRound();
+  updateStatsUI();
 }
 
 function startRound() {
@@ -595,6 +703,7 @@ function startRound() {
   confidenceValEl.textContent = "";
   circularTimer.reset();
   learnControls.hidden = true;
+  learnHowTo.hidden = gameMode !== "learn";
   document.getElementById("gameScreen").classList.toggle("learn-active", gameMode === "learn");
 
   if (gameMode === "letters") {
@@ -630,12 +739,14 @@ function startRound() {
 
     learnControls.hidden = false;
     learnPrevBtn.disabled = learnIndex === 0;
-    learnProgressLabel.textContent = `Letter ${learnIndex + 1} of ${LETTERS.length}`;
+    const completedCount = completedLearnLetters.size;
 
-    // Learn Mode teaches before testing: show the reference immediately
-    // instead of only revealing it after a miss.
+    learnProgressLabel.textContent =
+      `Letter ${learnIndex + 1} of ${LETTERS.length} · ` +
+      `${completedCount}/${LETTERS.length} completed`;
+
     showReferenceFor(currentTarget);
-
+    showLearnInstructions(currentTarget);
     resetMotionDetector(currentTarget);
   } else {
     currentWord = "";
@@ -777,6 +888,9 @@ function resetGameState() {
   score = 0;
   comboState.combo = 0;
   comboState.lastAnnouncedTier = null;
+
+  completedLearnLetters.clear();
+  learnIndex = 0;
   bestComboSession = 0;
   roundIndex = 0;
   correctCount = 0;
