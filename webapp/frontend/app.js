@@ -2,14 +2,14 @@ import { resetMotionDetector, updateMotionDetector, } from "./js/motionDetector.
 import { LETTERS, LETTER_CUES, ROUNDS_TOTAL, SEND_INTERVAL_MS, HISTORY_LEN, DIFFICULTIES, XP_CORRECT, XP_MISS, unlockedThemes, CORRECT_ADVANCE_DELAY_MS, MISS_ADVANCE_DELAY_MS } from "./js/config.js";
 import {
   loadProfile, saveProfile, getLevelInfo, addXp,
-  recordRoundResult, recordCombo, recordGameEnd,
+  recordRoundResult, recordCombo, recordGameEnd, markLetterMastered,
 } from "./js/profile.js";
 import { checkAchievements, showAchievementToasts } from "./js/achievements.js";
 import { createComboState, registerCorrect, registerMiss, maybeShowComboPopup } from "./js/combo.js";
 import { ensureAudio, setVolume, setMuted, playCorrectSound, playMissSound, playTick } from "./js/audio.js";
 import { burstConfetti, glowPulse } from "./js/confetti.js";
 import {
-  setupHandLandmarker, setupCamera, getFlippedFrame, detectHands, drawSkeleton, normalizeLandmarks,
+  setupHandLandmarker, setupCamera, getFlippedFrame, detectHands, drawSkeleton, normalizeLandmarks, drawGhostHand,
 } from "./js/handTracking.js";
 import { connectWs, requestPrediction, createSmoother } from "./js/websocketClient.js";
 import { loadReferences, coachFor } from "./js/coaching.js";
@@ -23,6 +23,7 @@ const screens = {
   end: document.getElementById("endScreen"),
   stats: document.getElementById("statsScreen"),
   settings: document.getElementById("settingsScreen"),
+  learnComplete: document.getElementById("learnCompleteScreen"),
 };
 let previousScreen = "start";
 
@@ -43,9 +44,18 @@ const muteBtn = document.getElementById("muteBtn");
 const modeToggleBtn = document.getElementById("modeToggleBtn");
 const lettersModeBtn = document.getElementById("lettersModeBtn");
 const wordsModeBtn = document.getElementById("wordsModeBtn");
+const learnModeBtn = document.getElementById("learnModeBtn");
 const modeBadge = document.getElementById("modeBadge");
 const targetLabelEl = document.getElementById("targetLabel");
 const wordProgressEl = document.getElementById("wordProgress");
+const learnControls = document.getElementById("learnControls");
+const learnHowTo = document.getElementById("learnHowTo");
+const learnHowToText = document.getElementById("learnHowToText");
+const learnPrevBtn = document.getElementById("learnPrevBtn");
+const learnSkipBtn = document.getElementById("learnSkipBtn");
+const learnProgressLabel = document.getElementById("learnProgressLabel");
+const learnCompleteToLettersBtn = document.getElementById("learnCompleteToLettersBtn");
+const learnCompleteToMenuBtn = document.getElementById("learnCompleteToMenuBtn");
 
 const scoreVal = document.getElementById("scoreVal");
 const comboVal = document.getElementById("comboVal");
@@ -66,6 +76,7 @@ const coachingHintEl = document.getElementById("coachingHint");
 const referencePanel = document.getElementById("referencePanel");
 const referenceImg = document.getElementById("referenceImg");
 const referenceCue = document.getElementById("referenceCue");
+const ghostHandCanvas = document.getElementById("ghostHandCanvas");
 const masteryRow = document.getElementById("masteryRow");
 const connectionBanner = document.getElementById("connectionBanner");
 const levelNumEl = document.getElementById("levelNum");
@@ -99,8 +110,13 @@ function goToMainMenu() {
   currentWord = "";
   currentWordTarget = "";
   lastAcceptedLetter = null;
+  learnControls.hidden = true;
+  learnIndex = 0;
   gameMode = null;
   updateModeBadge(null);
+  completedLearnLetters.clear();
+  learnHowTo.hidden = true;
+  learnHowToText.textContent = "";
   showScreen("start");
 }
 
@@ -264,6 +280,55 @@ let fastestLetter = null;
 let xpAtGameStart = 0;
 
 let gameMode = null;
+let learnIndex = 0;
+// Letters the user has successfully demonstrated during this Learn Mode session.
+const completedLearnLetters = new Set();
+const LEARN_INSTRUCTIONS = {
+  A: "Make a fist with your thumb resting against the side of your index finger.",
+  B: "Hold all four fingers straight together and fold your thumb across your palm.",
+  C: "Curve your fingers and thumb to form the shape of the letter C.",
+  D: "Touch your thumb to your middle finger while keeping your index finger pointing upward.",
+  E: "Curl all four fingers downward and tuck your thumb underneath them.",
+  F: "Touch your thumb and index finger together. Keep the other three fingers raised.",
+  G: "Point your index finger and thumb sideways, keeping them parallel.",
+  H: "Extend your index and middle fingers together sideways.",
+  I: "Make a fist and raise only your little finger.",
+  J: "Start with the sign for I, then draw a J shape in the air using your little finger.",
+  K: "Raise your index and middle fingers. Place your thumb between them.",
+  L: "Extend your thumb and index finger to form an L shape.",
+  M: "Place your thumb underneath your first three fingers.",
+  N: "Place your thumb underneath your index and middle fingers.",
+  O: "Curve all fingers and your thumb together to create an O shape.",
+  P: "Use the K handshape, then point it downward.",
+  Q: "Use the G handshape, then point it downward.",
+  R: "Cross your index and middle fingers while keeping the other fingers folded.",
+  S: "Make a fist with your thumb folded across the front of your fingers.",
+  T: "Make a fist with your thumb placed between your index and middle fingers.",
+  U: "Raise your index and middle fingers together, keeping them straight.",
+  V: "Raise your index and middle fingers apart to form a V.",
+  W: "Raise your index, middle and ring fingers while keeping the others folded.",
+  X: "Raise your index finger and bend it into a hook shape.",
+  Y: "Extend your thumb and little finger while keeping the middle fingers folded.",
+  Z: "Use your index finger to draw a Z shape in the air."
+};
+
+function showLearnInstructions(letter) {
+  if (gameMode !== "learn") {
+    learnHowTo.hidden = true;
+    learnHowToText.textContent = "";
+    return;
+  }
+
+  learnHowTo.hidden = false;
+
+  const instruction =
+    LEARN_INSTRUCTIONS[letter] ||
+    LETTER_CUES[letter] ||
+    "Copy the reference handshape and hold it steadily.";
+
+  learnHowToText.innerHTML =
+    `<strong>${letter}:</strong> ${instruction}`;
+}
 const WORDS = {
     easy: [
         "cat", "dog", "hat", "pen", "cup",
@@ -323,6 +388,8 @@ function updateModeBadge(mode = null) {
     modeBadge.textContent = `Letter Mode · ${LETTER_ROUNDS_TOTAL} rounds`;
   } else if (mode === "words") {
     modeBadge.textContent = `Word Mode · ${WORD_ROUNDS_TOTAL} rounds`;
+  } else if (mode === "learn") {
+    modeBadge.textContent = `Learn Mode · ${LETTERS.length} letters`;
   } else {
     modeBadge.textContent = "Choose a mode";
   }
@@ -335,6 +402,11 @@ function updateModeBadge(mode = null) {
   wordsModeBtn?.classList.toggle(
     "selected",
     mode === "words"
+  );
+
+  learnModeBtn?.classList.toggle(
+    "selected",
+    mode === "learn"
   );
 }
 
@@ -364,7 +436,7 @@ function pickNextLetter() {
 function renderMasteryRow() {
   masteryRow.innerHTML = "";
 
-  if (gameMode !== "letters") return;
+  if (gameMode === "words") return;
 
   for (const letter of LETTERS) {
     const tile = document.createElement("div");
@@ -377,10 +449,21 @@ function renderMasteryRow() {
 }
 
 function updateStatsUI() {
+  const isLearn = gameMode === "learn";
+  const scoreStat = scoreVal.closest(".stat");
+  const comboStat = comboVal.closest(".stat");
+  if (scoreStat) scoreStat.hidden = isLearn;
+  if (comboStat) comboStat.hidden = isLearn;
+
   scoreVal.textContent = String(score);
   comboVal.textContent = String(comboState.combo);
-  const totalRounds = currentRoundsTotal();
-  roundVal.textContent = `${Math.min(roundIndex, totalRounds)}/${totalRounds}`;
+
+  if (isLearn) {
+    roundVal.textContent = `${Math.min(learnIndex + 1, LETTERS.length)}/${LETTERS.length}`;
+  } else {
+    const totalRounds = currentRoundsTotal();
+    roundVal.textContent = `${Math.min(roundIndex, totalRounds)}/${totalRounds}`;
+  }
 }
 
 function showReferenceFor(letter) {
@@ -391,6 +474,13 @@ function showReferenceFor(letter) {
   referenceImg.onerror = () => {
     referenceImg.hidden = true;
   };
+
+  // Visual handshape diagram derived from the real training data (mean
+  // landmark positions per letter+hand) -- this is the primary teaching
+  // visual until real reference photos are added to assets/letters/.
+  const handForDiagram = lastHandLabel || "right";
+  const referenceVector = letterReferences?.[letter]?.[handForDiagram];
+  drawGhostHand(ghostHandCanvas, referenceVector);
 }
 
 function runAchievementCheck(extra = {}) {
@@ -493,6 +583,108 @@ function acceptWordLetter(letter) {
   confidenceValEl.textContent = "";
 }
 
+// Learn Mode never times out and never "misses" -- this is its only
+// success path, kept separate from endRound() since none of the
+// scoring/combo/XP/session-report logic there applies to untimed practice.
+function completeLearnLetter() {
+  if (!roundActive) return;
+  roundActive = false;
+
+  holdBar.style.width = "100%";
+
+  completedLearnLetters.add(currentTarget);
+
+  markLetterMastered(profile, currentTarget);
+  mastered.add(currentTarget);
+  saveProfile(profile);
+  renderLevelBadge();
+  renderMasteryRow();
+
+  runAchievementCheck({ lastRoundWasCorrect: true });
+
+  feedbackPanel.hidden = false;
+  feedbackPanel.classList.add("correct");
+  feedbackPanel.classList.remove("miss");
+  feedbackTitle.textContent = "Nice! You've got it ✅";
+  responseTimeValEl.textContent = "";
+  poseSimilarityValEl.textContent = "";
+  coachingHintEl.textContent = "";
+
+  playCorrectSound();
+  burstConfetti();
+  glowPulse(document.querySelector(".camera-wrap"));
+
+  setTimeout(() => advanceLearnMode(1), CORRECT_ADVANCE_DELAY_MS);
+}
+
+function showLearnCompleteScreen() {
+  running = false;
+  roundActive = false;
+  showScreen("learnComplete");
+}
+
+function getFirstIncompleteLearnIndex() {
+  return LETTERS.findIndex(
+    (letter) => !completedLearnLetters.has(letter)
+  );
+}
+
+function advanceLearnMode(direction) {
+  const movingForward = direction > 0;
+  const atLastLetter = learnIndex >= LETTERS.length - 1;
+
+  if (movingForward && atLastLetter) {
+    const completedAllLetters =
+      completedLearnLetters.size === LETTERS.length;
+
+    if (completedAllLetters) {
+      showLearnCompleteScreen();
+      return;
+    }
+
+    // Z was reached, but one or more letters were skipped.
+    const firstIncompleteIndex = getFirstIncompleteLearnIndex();
+
+    feedbackPanel.hidden = false;
+    feedbackPanel.classList.remove("correct", "miss");
+    feedbackTitle.textContent =
+      "You still have letters left to complete";
+
+    responseTimeValEl.textContent = "";
+    poseSimilarityValEl.textContent = "";
+
+    const remainingLetters = LETTERS.filter(
+      (letter) => !completedLearnLetters.has(letter)
+    );
+
+    coachingHintEl.innerHTML =
+      `Complete every letter before finishing Learn Mode. ` +
+      `Remaining: <span class="learn-incomplete-message">` +
+      `${remainingLetters.join(", ")}</span>`;
+
+    // Return to the first letter that was skipped.
+    setTimeout(() => {
+      learnIndex =
+        firstIncompleteIndex >= 0
+          ? firstIncompleteIndex
+          : 0;
+
+      startRound();
+      updateStatsUI();
+    }, 1600);
+
+    return;
+  }
+
+  learnIndex = Math.min(
+    LETTERS.length - 1,
+    Math.max(0, learnIndex + direction)
+  );
+
+  startRound();
+  updateStatsUI();
+}
+
 function startRound() {
   holdMs = 0;
   holdBar.style.width = "0%";
@@ -510,6 +702,9 @@ function startRound() {
   predictedLetterEl.textContent = "—";
   confidenceValEl.textContent = "";
   circularTimer.reset();
+  learnControls.hidden = true;
+  learnHowTo.hidden = gameMode !== "learn";
+  document.getElementById("gameScreen").classList.toggle("learn-active", gameMode === "learn");
 
   if (gameMode === "letters") {
     currentTarget = pickNextLetter();
@@ -519,12 +714,39 @@ function startRound() {
     lastAcceptedLetter = null;
 
     targetLabelEl.textContent = "Sign this letter";
+    targetLetterEl.classList.remove("word-target");
     targetLetterEl.hidden = false;
     targetLetterEl.textContent = currentTarget;
 
     wordProgressEl.hidden = true;
     wordProgressEl.textContent = "";
 
+    resetMotionDetector(currentTarget);
+  } else if (gameMode === "learn") {
+    currentTarget = LETTERS[learnIndex];
+
+    currentWord = "";
+    currentWordTarget = "";
+    lastAcceptedLetter = null;
+
+    targetLabelEl.textContent = "Sign this letter";
+    targetLetterEl.classList.remove("word-target");
+    targetLetterEl.hidden = false;
+    targetLetterEl.textContent = currentTarget;
+
+    wordProgressEl.hidden = true;
+    wordProgressEl.textContent = "";
+
+    learnControls.hidden = false;
+    learnPrevBtn.disabled = learnIndex === 0;
+    const completedCount = completedLearnLetters.size;
+
+    learnProgressLabel.textContent =
+      `Letter ${learnIndex + 1} of ${LETTERS.length} · ` +
+      `${completedCount}/${LETTERS.length} completed`;
+
+    showReferenceFor(currentTarget);
+    showLearnInstructions(currentTarget);
     resetMotionDetector(currentTarget);
   } else {
     currentWord = "";
@@ -538,6 +760,7 @@ function startRound() {
 
     targetLabelEl.textContent = "Spell this word";
     targetLetterEl.hidden = false;
+    targetLetterEl.classList.add("word-target");
     targetLetterEl.textContent = currentWordTarget;
 
     wordProgressEl.hidden = false;
@@ -665,6 +888,9 @@ function resetGameState() {
   score = 0;
   comboState.combo = 0;
   comboState.lastAnnouncedTier = null;
+
+  completedLearnLetters.clear();
+  learnIndex = 0;
   bestComboSession = 0;
   roundIndex = 0;
   correctCount = 0;
@@ -722,6 +948,8 @@ function detectLoop() {
 
       if (gameMode === "words") {
       acceptWordLetter(motionPrediction);
+      } else if (gameMode === "learn") {
+        completeLearnLetter();
       } else {
         endRound(true);
       }
@@ -737,7 +965,7 @@ function detectLoop() {
       const handValue = lastHandLabel === "right" ? 1 : 0;
       const payload = [handValue, ...features];
 
-      requestPrediction(payload).then((resp) => {
+      requestPrediction(payload, gameMode === "words" ? "words" : "letters").then((resp) => {
         sendInFlight = false;
         if (resp && resp.letter) {
           lastConfidence = resp.confidence;
@@ -777,7 +1005,7 @@ function detectLoop() {
     circularTimer.update(remainingMs, roundTimeMs);
 
     const remainingSec = Math.ceil(remainingMs / 1000);
-    if (remainingMs <= 3000 && remainingMs > 0 && remainingSec !== lastTickSecond) {
+    if (remainingMs <= 3000 && remainingMs > 0 && remainingSec !== lastTickSecond && gameMode !== "learn") {
       lastTickSecond = remainingSec;
       playTick();
     }
@@ -800,6 +1028,10 @@ function detectLoop() {
         if (gameMode === "words") {
 
           acceptWordLetter(finalPrediction);
+
+        } else if (gameMode === "learn") {
+
+          completeLearnLetter();
 
         } else {
 
@@ -831,7 +1063,7 @@ function detectLoop() {
 
     }
 
-    if (elapsed >= roundTimeMs) {
+    if (elapsed >= roundTimeMs && gameMode !== "learn") {
       endRound(false);
     }
   }
@@ -875,6 +1107,22 @@ lettersModeBtn?.addEventListener("click", async () => {
 
 wordsModeBtn?.addEventListener("click", async () => {
   gameMode = "words";
+  updateModeBadge(gameMode);
+  await startGame();
+});
+
+learnModeBtn?.addEventListener("click", async () => {
+  gameMode = "learn";
+  learnIndex = 0;
+  updateModeBadge(gameMode);
+  await startGame();
+});
+
+learnPrevBtn?.addEventListener("click", () => advanceLearnMode(-1));
+learnSkipBtn?.addEventListener("click", () => advanceLearnMode(1));
+learnCompleteToMenuBtn?.addEventListener("click", goToMainMenu);
+learnCompleteToLettersBtn?.addEventListener("click", async () => {
+  gameMode = "letters";
   updateModeBadge(gameMode);
   await startGame();
 });

@@ -21,6 +21,10 @@
   --accent: #d0e3ff;   /* pale blue */
   --accent-2: #9db8e8; /* mid blue */
   --accent-3: #f7f2eb; /* cream, used for XP/achievement highlights */
+  --accent-soft: rgba(208, 227, 255, 0.1); /* low-opacity accent tint for badge/chip backgrounds */
+  /* accent/accent-3 are both light in dark mode (pale blue -> cream), so text
+     drawn on an accent-to-accent-3 gradient needs to be dark here... */
+  --on-accent: #0a1930;
   --success: #7fb2ff;
   --danger: #e2725b;
 
@@ -40,6 +44,9 @@ body[data-mode="light"] {
   --accent: #081f5c;   /* navy */
   --accent-2: #2d4a8f; /* mid navy-blue */
   --accent-3: #6f97e0; /* deepened pale blue for contrast on cream */
+  --accent-soft: rgba(8, 31, 92, 0.08); /* low-opacity accent tint for badge/chip backgrounds */
+  /* ...and both are dark here (navy -> mid blue), so it flips to light text. */
+  --on-accent: #f7f2eb;
   --success: #1f4f9e;
   --danger: #c65a42;
 }
@@ -307,7 +314,7 @@ body[data-mode="light"] .light-burst::before { opacity: 0.55; }
   padding: 28px;
 }
 
-#startScreen, #endScreen, #statsScreen, #settingsScreen {
+#startScreen, #endScreen, #statsScreen, #settingsScreen, #learnCompleteScreen {
   text-align: center;
   max-width: 760px;
   margin: 24px auto;
@@ -343,7 +350,7 @@ body[data-mode="light"] .light-burst::before { opacity: 0.55; }
 
 .btn-primary {
   background: linear-gradient(90deg, var(--accent), var(--accent-3));
-  color: #0a1930;
+  color: var(--on-accent);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
 }
 .btn-primary:hover { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28); transform: translateY(-1px); }
@@ -354,12 +361,6 @@ body[data-mode="light"] .light-burst::before { opacity: 0.55; }
   border: 1px solid var(--card-border);
 }
 .btn-secondary:hover { background: var(--bg-3); }
-
-.mode-select .selected {
-  outline: 2px solid #fff;
-  transform: scale(1.03);
-  box-shadow: 0 0 18px rgba(255,255,255,0.25);
-}
 
 button:disabled {
   opacity: 0.65;
@@ -409,10 +410,10 @@ button:disabled {
   margin-top: 8px;
   padding: 8px 18px;
 
-  border: 1px solid rgba(208, 227, 255, 0.3);
+  border: 1px solid var(--accent-soft);
   border-radius: 999px;
 
-  background: rgba(208, 227, 255, 0.08);
+  background: var(--accent-soft);
   color: var(--accent);
 
   font-size: 0.78rem;
@@ -444,16 +445,11 @@ button:disabled {
   min-height: 165px;
   padding: 24px;
 
-  border: 1px solid var(--card-border);
+  border: 2px solid var(--card-border);
   border-radius: 20px;
 
-  background:
-    linear-gradient(
-      145deg,
-      rgba(31, 54, 108, 0.96),
-      rgba(13, 34, 80, 0.96)
-    );
-
+  /* var(--card), not a hardcoded navy gradient, so this adapts to light mode too. */
+  background: var(--card);
   color: var(--text);
   font: inherit;
   text-align: left;
@@ -472,22 +468,14 @@ button:disabled {
 .mode-card:hover {
   transform: translateY(-5px);
   border-color: var(--accent);
-
-  box-shadow:
-    0 22px 45px rgba(0, 0, 0, 0.3),
-    0 0 18px rgba(208, 227, 255, 0.1);
+  background: var(--bg-3);
+  box-shadow: 0 22px 45px rgba(0, 0, 0, 0.3), var(--shadow-soft);
 }
 
 .mode-card.selected {
   border-color: var(--accent);
-  outline: 3px solid rgba(208, 227, 255, 0.14);
-
-  background:
-    linear-gradient(
-      145deg,
-      rgba(43, 76, 139, 0.98),
-      rgba(17, 44, 96, 0.98)
-    );
+  background: var(--bg-3);
+  box-shadow: 0 0 0 3px var(--accent) inset, var(--shadow-soft);
 }
 
 .mode-icon {
@@ -497,10 +485,10 @@ button:disabled {
   width: 64px;
   height: 64px;
 
-  border: 1px solid rgba(208, 227, 255, 0.3);
+  border: 1px solid var(--accent-soft);
   border-radius: 17px;
 
-  background: rgba(208, 227, 255, 0.1);
+  background: var(--accent-soft);
   color: var(--accent);
 
   font-size: 1.1rem;
@@ -541,7 +529,7 @@ button:disabled {
   padding: 4px 10px;
 
   border-radius: 999px;
-  background: rgba(208, 227, 255, 0.1);
+  background: var(--accent-soft);
 
   color: var(--accent);
   font-size: 0.72rem;
@@ -588,21 +576,18 @@ button:disabled {
 }
 
 .word-letter.active {
-  border-bottom-color: #22d3ee;
-  color: #22d3ee;
+  border-bottom-color: var(--accent);
+  color: var(--accent);
 
   transform: translateY(-3px);
-  text-shadow: 0 0 12px rgba(34, 211, 238, 0.4);
 }
 
 .word-letter.completed {
-  border-bottom-color: #38d996;
-  color: #38d996;
+  border-bottom-color: var(--success);
+  color: var(--success);
 
-  background: rgba(56, 217, 150, 0.12);
+  background: var(--accent-soft);
   border-radius: 8px 8px 3px 3px;
-
-  text-shadow: 0 0 12px rgba(56, 217, 150, 0.35);
 
   animation: acceptedLetterPop 0.35s ease;
 }
@@ -674,6 +659,12 @@ button:disabled {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
+/* Learn Mode has no timer -- there's nothing to count down. */
+#gameScreen.learn-active .circular-timer,
+#gameScreen.learn-active .timer-text {
+  display: none;
+}
+
 .hold-track {
   margin-top: 10px;
   height: 8px;
@@ -731,6 +722,23 @@ button:disabled {
   line-height: 1;
   margin: 6px 0 10px;
   color: var(--accent);
+}
+
+/* Word Mode shows a whole word here instead of one letter -- the fixed
+   7rem size above is sized for a single character and overflows badly
+   on longer words, so it gets a responsive, much smaller size instead. */
+.target-letter.word-target {
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  letter-spacing: 0.06em;
+  word-break: break-word;
+}
+
+.word-progress {
+  margin: 4px 0 10px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--accent-2);
 }
 
 .combo-popup {
@@ -796,13 +804,52 @@ button:disabled {
   margin-bottom: 8px;
 }
 
+.reference-visuals {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
 .reference-panel img {
   max-width: 140px;
   border-radius: 10px;
   border: 1px solid var(--card-border);
-  margin-bottom: 8px;
+}
+
+/* Skeleton diagram of the target handshape, drawn from real training-data
+   landmark positions -- the primary teaching visual until real reference
+   photos exist in assets/letters/. */
+.ghost-hand-canvas {
+  width: 130px;
+  height: 130px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
 }
 .reference-cue { color: var(--text-dim); font-size: 0.9rem; margin: 0; }
+
+/* ===== Learn Mode navigation ===== */
+.learn-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.learn-controls .btn {
+  padding: 10px 22px;
+  font-size: 0.9rem;
+}
+.learn-progress-label {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 120px;
+  text-align: center;
+}
 
 /* ===== Mastery tracker ===== */
 .mastery-row {
@@ -824,7 +871,7 @@ button:disabled {
 }
 .mastery-tile.mastered {
   background: linear-gradient(135deg, var(--accent-2), var(--success));
-  color: #0a1930;
+  color: var(--on-accent);
   border-color: transparent;
 }
 .mastery-tile.current { outline: 2px solid var(--accent-3); animation: pulse 1s ease-in-out infinite; }
@@ -843,8 +890,7 @@ button:disabled {
   font-size: 2rem;
   font-weight: 800;
   background: linear-gradient(135deg, var(--accent), var(--accent-3));
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  color: var(--on-accent);
   margin: 8px auto 16px;
 }
 
@@ -1007,4 +1053,42 @@ button:disabled {
   .topbar { justify-content: center; text-align: center; }
   .end-stats { gap: 14px; }
   .target-letter { font-size: 5rem; }
+}
+
+/* ===== Learn Mode Instructions ===== */
+
+.learn-how-to {
+  width: min(100%, 430px);
+  margin: 18px auto 8px;
+  padding: 16px 18px;
+  border: 1px solid rgba(90, 150, 255, 0.3);
+  border-radius: 16px;
+  background: rgba(90, 150, 255, 0.09);
+  text-align: left;
+}
+
+.learn-how-to-title {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--accent, #79aaff);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.learn-how-to p {
+  margin: 0;
+  color: var(--text-primary, #ffffff);
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.learn-how-to strong {
+  color: var(--accent, #79aaff);
+}
+
+.learn-incomplete-message {
+  color: #ffbf47;
+  font-weight: 700;
 }

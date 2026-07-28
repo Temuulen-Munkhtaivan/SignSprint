@@ -125,6 +125,35 @@
 
             <span class="mode-arrow">→</span>
           </button>
+
+          <button
+            id="learnModeBtn"
+            class="mode-card"
+            type="button"
+          >
+            <span class="mode-icon">🎓</span>
+
+            <span class="mode-text">
+              <span class="mode-eyebrow">
+                BEGINNER FRIENDLY
+              </span>
+
+              <span class="mode-title">
+                Learn Mode
+              </span>
+
+              <span class="mode-description">
+                New to ASL? Go through the alphabet
+                step by step, no timer or scoring.
+              </span>
+
+              <span class="mode-meta">
+                26 letters
+              </span>
+            </span>
+
+            <span class="mode-arrow">→</span>
+          </button>
         </div>
     </section>
 
@@ -153,6 +182,11 @@
           <div id="targetLetter" class="target-letter">A</div>
           <div id="wordProgress" class="word-progress" hidden></div>
 
+          <div id="learnHowTo" class="learn-how-to" hidden>
+            <span class="learn-how-to-title">How to sign it</span>
+            <p id="learnHowToText"></p>
+          </div>
+
           <div id="comboPopup" class="combo-popup"></div>
 
           <div class="predicted-row">
@@ -169,14 +203,32 @@
             </div>
             <div id="coachingHint" class="coaching-hint"></div>
             <div id="referencePanel" class="reference-panel" hidden>
-              <img id="referenceImg" alt="Reference handshape" />
+              <div class="reference-visuals">
+                <img id="referenceImg" alt="Reference handshape" />
+                <canvas id="ghostHandCanvas" class="ghost-hand-canvas" width="160" height="160"></canvas>
+              </div>
               <p id="referenceCue" class="reference-cue"></p>
             </div>
           </div>
         </div>
       </div>
 
+      <div class="learn-controls" id="learnControls" hidden>
+        <button id="learnPrevBtn" class="btn btn-secondary" type="button">◀ Previous</button>
+        <span id="learnProgressLabel" class="learn-progress-label"></span>
+        <button id="learnSkipBtn" class="btn btn-secondary" type="button">Skip ▶</button>
+      </div>
+
       <div class="mastery-row" id="masteryRow"></div>
+    </section>
+
+    <section id="learnCompleteScreen" class="screen fade-in" hidden>
+      <h2>You've been through the whole alphabet! 🎉</h2>
+      <p class="tagline">Great start — now try Letter Mode to see how well it stuck, or Word Mode once you're ready for a bigger challenge.</p>
+      <div class="end-actions">
+        <button id="learnCompleteToLettersBtn" class="btn btn-primary">Try Letter Mode</button>
+        <button id="learnCompleteToMenuBtn" class="btn btn-secondary">Main Menu</button>
+      </div>
     </section>
 
     <section id="endScreen" class="screen fade-in" hidden>
@@ -306,6 +358,6 @@
 
 <div id="achievementToasts" class="achievement-toasts" aria-live="polite"></div>
 
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=3"></script>
 </body>
 </html>

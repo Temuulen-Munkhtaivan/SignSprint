@@ -73,6 +73,36 @@ export function drawSkeleton(ctx, landmarks, width, height) {
   }
 }
 
+// Renders a per-letter reference vector (from letter_references.json --
+// wrist-relative mean landmark positions computed from the training data)
+// as a static skeleton diagram, reusing drawSkeleton so it visually matches
+// the live camera overlay. This is what teaches a beginner the handshape
+// when no reference photo has been supplied (see assets/letters/README.md).
+export function drawGhostHand(canvas, referenceFlat63) {
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!referenceFlat63) return;
+
+  const points = [];
+  for (let i = 0; i < 21; i++) {
+    points.push({ x: referenceFlat63[i * 3], y: referenceFlat63[i * 3 + 1] });
+  }
+
+  // Reference coords are wrist-relative offsets (wrist = origin), roughly
+  // in [-1, 1] after per-sample normalization -- map that onto the canvas
+  // around a fixed center point rather than the raw [0,1] image-fraction
+  // space drawSkeleton normally expects.
+  const CENTER_X = 0.5;
+  const CENTER_Y = 0.38;
+  const SCALE = 0.36;
+  const canvasPoints = points.map((p) => ({
+    x: CENTER_X + p.x * SCALE,
+    y: CENTER_Y + p.y * SCALE,
+  }));
+
+  drawSkeleton(ctx, canvasPoints, canvas.width, canvas.height);
+}
+
 // Must mirror ai_module/data_collection/data_collector.py's normalization exactly:
 // wrist-relative coordinates, divided by the max absolute value across all of them.
 export function normalizeLandmarks(landmarks) {
