@@ -155,6 +155,7 @@
             <span class="mode-arrow">→</span>
           </button>
         </div>
+      </div>
     </section>
 
     <section id="gameScreen" class="screen fade-in" hidden>
@@ -202,13 +203,19 @@
               <span id="poseSimilarityVal"></span>
             </div>
             <div id="coachingHint" class="coaching-hint"></div>
-            <div id="referencePanel" class="reference-panel" hidden>
-              <div class="reference-visuals">
-                <img id="referenceImg" alt="Reference handshape" />
-                <canvas id="ghostHandCanvas" class="ghost-hand-canvas" width="160" height="160"></canvas>
-              </div>
-              <p id="referenceCue" class="reference-cue"></p>
+          </div>
+
+          <!-- Sibling of feedbackPanel, not nested inside it: Learn Mode shows
+               this upfront (before any attempt), while feedbackPanel only
+               appears after a round result -- nesting it inside feedbackPanel
+               previously meant it stayed invisible until feedbackPanel did,
+               even after being explicitly un-hidden. -->
+          <div id="referencePanel" class="reference-panel" hidden>
+            <div class="reference-visuals">
+              <img id="referenceImg" alt="Reference handshape" />
+              <canvas id="ghostHandCanvas" class="ghost-hand-canvas" width="160" height="160"></canvas>
             </div>
+            <p id="referenceCue" class="reference-cue"></p>
           </div>
         </div>
       </div>
@@ -358,6 +365,6 @@
 
 <div id="achievementToasts" class="achievement-toasts" aria-live="polite"></div>
 
-<script type="module" src="app.js?v=3"></script>
+<script type="module" src="app.js?v=4"></script>
 </body>
 </html>

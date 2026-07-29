@@ -15,6 +15,7 @@ import { connectWs, requestPrediction, createSmoother } from "./js/websocketClie
 import { loadReferences, coachFor } from "./js/coaching.js";
 import { createCircularTimer } from "./js/timer.js";
 import { renderEndReport, renderStatsScreen } from "./js/statsView.js";
+import { isMotionLetter, motionLetterFrame, MOTION_LETTER_BASE, LOOP_MS as GHOST_LOOP_MS } from "./js/ghostAnimation.js";
 
 // ===== DOM =====
 const screens = {
@@ -103,6 +104,7 @@ function goToMainMenu() {
   holdBar.style.width = "0%";
   circularTimer.reset();
   feedbackPanel.hidden = true;
+  stopGhostAnimation();
   predictedLetterEl.textContent = "—";
   confidenceValEl.textContent = "";
   wordProgressEl.hidden = true;
@@ -466,6 +468,15 @@ function updateStatsUI() {
   }
 }
 
+let ghostAnimHandle = null;
+
+function stopGhostAnimation() {
+  if (ghostAnimHandle != null) {
+    cancelAnimationFrame(ghostAnimHandle);
+    ghostAnimHandle = null;
+  }
+}
+
 function showReferenceFor(letter) {
   referencePanel.hidden = false;
   referenceCue.textContent = LETTER_CUES[letter] || "";
@@ -478,9 +489,29 @@ function showReferenceFor(letter) {
   // Visual handshape diagram derived from the real training data (mean
   // landmark positions per letter+hand) -- this is the primary teaching
   // visual until real reference photos are added to assets/letters/.
+  stopGhostAnimation();
   const handForDiagram = lastHandLabel || "right";
-  const referenceVector = letterReferences?.[letter]?.[handForDiagram];
-  drawGhostHand(ghostHandCanvas, referenceVector);
+
+  if (isMotionLetter(letter)) {
+    // J and Z have no static pose -- animate the fingertip through the
+    // actual motion path instead of showing a frozen (and previously blank)
+    // diagram, so the player can watch and copy the movement.
+    const baseVector = letterReferences?.[MOTION_LETTER_BASE[letter]]?.[handForDiagram];
+    if (baseVector) {
+      const startedAt = performance.now();
+      const tick = () => {
+        const t = ((performance.now() - startedAt) % GHOST_LOOP_MS) / GHOST_LOOP_MS;
+        drawGhostHand(ghostHandCanvas, motionLetterFrame(letter, baseVector, t));
+        ghostAnimHandle = requestAnimationFrame(tick);
+      };
+      tick();
+    } else {
+      drawGhostHand(ghostHandCanvas, null);
+    }
+  } else {
+    const referenceVector = letterReferences?.[letter]?.[handForDiagram];
+    drawGhostHand(ghostHandCanvas, referenceVector);
+  }
 }
 
 function runAchievementCheck(extra = {}) {
@@ -696,6 +727,7 @@ function startRound() {
   feedbackPanel.hidden = true;
   feedbackPanel.classList.remove("correct", "miss");
   referencePanel.hidden = true;
+  stopGhostAnimation();
   coachingHintEl.textContent = "";
 
   smoother.reset();

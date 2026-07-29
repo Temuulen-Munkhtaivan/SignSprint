@@ -804,6 +804,16 @@ button:disabled {
   margin-bottom: 8px;
 }
 
+.reference-panel {
+  margin-top: 18px;
+  width: 100%;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  animation: screenIn 0.25s ease;
+  text-align: center;
+}
 .reference-visuals {
   display: flex;
   align-items: center;
