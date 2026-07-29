@@ -488,25 +488,25 @@ function showReferenceFor(letter) {
   referenceCue.textContent = LETTER_CUES[letter] || "";
   referenceImg.hidden = false;
   // Public-domain (CC0) handshape diagrams from Wikimedia Commons -- see
-  // assets/letters/README.md for source/license details. Falls back to the
-  // ghost-hand diagram below for any letter that isn't present yet.
+  // assets/letters/README.md for source/license details.
   referenceImg.src = `assets/letters/${letter}.svg`;
-  referenceImg.onerror = () => {
-    referenceImg.hidden = true;
-  };
 
-  // Visual handshape diagram derived from the real training data (mean
-  // landmark positions per letter+hand) -- shown alongside the reference
-  // image above (or alone, if that letter's image isn't available yet).
   stopGhostAnimation();
+  ghostHandCanvas.hidden = true; // only shown where it adds something the image can't (below)
   const handForDiagram = lastHandLabel || "right";
+  const motion = isMotionLetter(letter);
 
-  if (isMotionLetter(letter)) {
-    // J and Z have no static pose -- animate the fingertip through the
-    // actual motion path instead of showing a frozen (and previously blank)
-    // diagram, so the player can watch and copy the movement.
-    const baseVector = letterReferences?.[MOTION_LETTER_BASE[letter]]?.[handForDiagram];
-    if (baseVector) {
+  function playGhostHand() {
+    ghostHandCanvas.hidden = false;
+    if (motion) {
+      // J and Z have no static pose -- animate the fingertip through the
+      // actual motion path so the player can watch and copy the movement,
+      // something the (still-shown) static reference image can't convey.
+      const baseVector = letterReferences?.[MOTION_LETTER_BASE[letter]]?.[handForDiagram];
+      if (!baseVector) {
+        ghostHandCanvas.hidden = true;
+        return;
+      }
       const startedAt = performance.now();
       const tick = () => {
         const t = ((performance.now() - startedAt) % GHOST_LOOP_MS) / GHOST_LOOP_MS;
@@ -515,11 +515,19 @@ function showReferenceFor(letter) {
       };
       tick();
     } else {
-      drawGhostHand(ghostHandCanvas, null);
+      drawGhostHand(ghostHandCanvas, letterReferences?.[letter]?.[handForDiagram]);
     }
-  } else {
-    const referenceVector = letterReferences?.[letter]?.[handForDiagram];
-    drawGhostHand(ghostHandCanvas, referenceVector);
+  }
+
+  referenceImg.onerror = () => {
+    referenceImg.hidden = true;
+    // Fallback for static letters only -- motion letters already always
+    // show the animated ghost-hand below, image or no image.
+    if (!motion) playGhostHand();
+  };
+
+  if (motion) {
+    playGhostHand();
   }
 }
 
