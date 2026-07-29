@@ -487,14 +487,17 @@ function showReferenceFor(letter) {
   referencePanel.hidden = false;
   referenceCue.textContent = LETTER_CUES[letter] || "";
   referenceImg.hidden = false;
-  referenceImg.src = `assets/letters/${letter}.png`;
+  // Public-domain (CC0) handshape diagrams from Wikimedia Commons -- see
+  // assets/letters/README.md for source/license details. Falls back to the
+  // ghost-hand diagram below for any letter that isn't present yet.
+  referenceImg.src = `assets/letters/${letter}.svg`;
   referenceImg.onerror = () => {
     referenceImg.hidden = true;
   };
 
   // Visual handshape diagram derived from the real training data (mean
-  // landmark positions per letter+hand) -- this is the primary teaching
-  // visual until real reference photos are added to assets/letters/.
+  // landmark positions per letter+hand) -- shown alongside the reference
+  // image above (or alone, if that letter's image isn't available yet).
   stopGhostAnimation();
   const handForDiagram = lastHandLabel || "right";
 
