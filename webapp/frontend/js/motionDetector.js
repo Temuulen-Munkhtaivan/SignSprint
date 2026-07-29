@@ -97,8 +97,6 @@
         if (movedDown && mostlyVertical) {
         phase = 1;
         phaseStart = { ...currentPoint };
-
-        console.log("J phase 1: downward stroke detected");
         }
 
         return null;
@@ -111,8 +109,6 @@
         Math.abs(dx) > Math.abs(dy) * 0.65;
 
         if (hookedSideways && mostlySideways) {
-        console.log("J detected");
-
         resetMotionDetector("J");
         return "J";
         }
@@ -135,8 +131,6 @@
         firstDirection = Math.sign(dx);
         phase = 1;
         phaseStart = { ...currentPoint };
-
-        console.log("Z phase 1: first horizontal detected");
         }
 
         return null;
@@ -155,8 +149,6 @@
         if (diagonalDown) {
         phase = 2;
         phaseStart = { ...currentPoint };
-
-        console.log("Z phase 2: diagonal detected");
         }
 
         return null;
@@ -173,8 +165,6 @@
         Math.abs(dx) > Math.abs(dy) * 0.8;
 
         if (horizontal) {
-        console.log("Z detected");
-
         resetMotionDetector("Z");
         return "Z";
         }

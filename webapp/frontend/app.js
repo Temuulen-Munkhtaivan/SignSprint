@@ -332,16 +332,21 @@ function showLearnInstructions(letter) {
     `<strong>${letter}:</strong> ${instruction}`;
 }
 const WORDS = {
+    // Includes a couple of J/Z words per tier now that motion detection
+    // supports those letters, so Word Mode can exercise them too instead
+    // of only ever appearing in Letter Mode/Learn Mode.
     easy: [
         "cat", "dog", "hat", "pen", "cup",
         "sun", "map", "fish", "book", "tree",
-        "ball", "milk", "shoe", "bird", "star"
+        "ball", "milk", "shoe", "bird", "star",
+        "jam", "zip"
     ],
 
     normal: [
         "apple", "banana", "school", "orange", "friend",
         "camera", "window", "teacher", "laptop", "garden",
-        "bottle", "rabbit", "pencil", "guitar", "library"
+        "bottle", "rabbit", "pencil", "guitar", "library",
+        "jacket", "zebra"
     ],
 
     hard: [
@@ -349,7 +354,8 @@ const WORDS = {
         "development", "communication", "environment",
         "information", "responsibility", "university",
         "recognition", "application", "performance",
-        "programming", "artificial"
+        "programming", "artificial",
+        "journey", "citizen"
     ]
 };
 let currentWord = "";
@@ -973,8 +979,6 @@ function detectLoop() {
       isMotionTarget &&
       motionPrediction === currentTarget
     ) {
-      console.log("Motion letter completed:", motionPrediction);
-
       // Instantly complete the progress bar
       holdBar.style.width = "100%";
 

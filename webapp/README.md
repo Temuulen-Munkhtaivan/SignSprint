@@ -36,8 +36,28 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-Open http://localhost:8000 and click **Start Game**. Localhost is treated as
-a secure context by browsers, so camera access works without HTTPS here.
+Open http://localhost:8000 and pick a mode (Letter/Word/Learn). Localhost is
+treated as a secure context by browsers, so camera access works without
+HTTPS here.
+
+## Running the smoke tests
+
+A small Playwright suite (`webapp/tests/`) covers the class of bug that's
+easy to miss by eye: a page that loads but silently fails to attach any
+interactivity (a JS error, a missing DOM id, a stale cached script), or a UI
+element that's technically present but hidden by a hidden ancestor. It uses
+a fake video device so "does starting a game work at all" can be checked
+without a real webcam -- it can't verify actual hand-sign recognition.
+
+```bash
+cd webapp
+npm install
+npx playwright install chromium --with-deps   # first time only
+npm test
+```
+
+The config starts the backend automatically (`webServer` in
+`playwright.config.js`), so you don't need `uvicorn` running separately first.
 
 ## Retraining / re-exporting the model
 

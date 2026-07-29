@@ -1027,7 +1027,7 @@ button:disabled {
   border: 1px solid var(--accent-3);
   border-radius: 12px;
   padding: 12px 16px;
-  max-width: 280px;
+  max-width: min(280px, calc(100vw - 32px));
   transform: translateX(120%);
   opacity: 0;
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
@@ -1063,6 +1063,22 @@ button:disabled {
   .topbar { justify-content: center; text-align: center; }
   .end-stats { gap: 14px; }
   .target-letter { font-size: 5rem; }
+
+  /* Larger touch targets for the header icon buttons -- 6px/10px padding
+     is comfortable with a mouse but tight to tap precisely on a phone. */
+  .icon-btn { padding: 10px 13px; font-size: 1.15rem; }
+
+  /* Settings rows put a label and a control side by side, which gets
+     cramped on narrow screens -- stack them instead. */
+  .settings-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .settings-row select,
+  .settings-row input[type="range"] {
+    width: 100%;
+  }
 }
 
 /* ===== Learn Mode Instructions ===== */
