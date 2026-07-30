@@ -3,6 +3,8 @@
 A real-time American Sign Language (ASL) fingerspelling recognition game with
 a browser-based camera interface.
 
+**Live demo:** https://signsprint.onrender.com
+
 **Run the web app:** see [webapp/README.md](webapp/README.md) for setup,
 running locally, testing, and deployment — that's the actual product.
 

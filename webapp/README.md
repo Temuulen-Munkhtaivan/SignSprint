@@ -1,10 +1,12 @@
 # SignSprint — Web Game
 
+**Live demo:** https://signsprint.onrender.com
+
 Real-time ASL fingerspelling game. Hand tracking runs in the browser
-(MediaPipe Tasks Vision); the browser sends only the 63 normalized landmark
-floats to a small FastAPI backend, which runs the trained model (as a plain
-NumPy forward pass — no TensorFlow/TFLite needed at serving time) and returns
-the predicted letter.
+(MediaPipe Tasks Vision); the browser sends only normalized landmark floats
+to a small FastAPI backend, which runs the trained model (as a plain NumPy
+forward pass — no TensorFlow/TFLite needed at serving time) and returns the
+predicted letter.
 
 ## Project layout
 
